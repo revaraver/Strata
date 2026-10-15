@@ -1,5 +1,6 @@
 // Windows/CUDA only. VMM preserves pointers held by sessions, kernels and CUDA graphs across sleep.
 #include "strata/core/device_park.hpp"
+#include "strata/core/resident_allocator.hpp"
 #include "strata/platform/memory.hpp"
 #include <cuda.h>
 #include <windows.h>
@@ -79,6 +80,7 @@ bool restore(State& s, std::string& e) {
         if (!check(cuMemcpyHtoD(b.va, s.host + b.offset, b.bytes), e, "restore device contents")) return false;
     free_host(s);
     s.sleeping = false;
+    strata::core::resident::unlock_all();
     return true;
 }
 } // namespace
@@ -131,21 +133,24 @@ bool release(std::string& e) {
     if (!enabled()) { e = "device parking was not enabled at engine startup"; return false; }
     auto& s = state(); std::lock_guard<std::mutex> lock(s.mutex);
     if (s.sleeping) return true;
-    if (cudaDeviceSynchronize() != cudaSuccess) { e = "device did not synchronize before parking"; return false; }
+    // Conversations may page to disk while the GPU runs; while it sleeps the next request must not
+    // pay page-file reads, so lock them for the sleep (and refuse the park if RAM cannot hold them).
+    if (!strata::core::resident::lock_all(e)) return false;
+    if (cudaDeviceSynchronize() != cudaSuccess) { strata::core::resident::unlock_all(); e = "device did not synchronize before parking"; return false; }
     size_t total = 0;
     for (auto& [p, b] : s.blocks) { b.offset = total; total += (b.bytes + 4095) / 4096 * 4096; }
-    if (!total) { e = "no parkable device allocations"; return false; }
+    if (!total) { strata::core::resident::unlock_all(); e = "no parkable device allocations"; return false; }
     // Refuse before changing any GPU mappings if physical RAM cannot hold the snapshot plus a 4 GiB margin.
     MEMORYSTATUSEX ms{}; ms.dwLength = sizeof ms; GlobalMemoryStatusEx(&ms);
-    if (ms.ullAvailPhys < total + (4ull << 30)) { e = "not enough physical RAM to park the GPU without paging"; return false; }
+    if (ms.ullAvailPhys < total + (4ull << 30)) { strata::core::resident::unlock_all(); e = "not enough physical RAM to park the GPU without paging"; return false; }
     s.host = (uint8_t*) VirtualAlloc(nullptr, total, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     s.host_bytes = total;
-    if (!s.host) { s.host_bytes = 0; e = "cannot allocate the device RAM snapshot"; return false; }
+    if (!s.host) { s.host_bytes = 0; strata::core::resident::unlock_all(); e = "cannot allocate the device RAM snapshot"; return false; }
     GetProcessWorkingSetSizeEx(GetCurrentProcess(), &s.old_min_ws, &s.old_max_ws, &s.old_ws_flags);
     const auto locked = strata::platform::lock_resident(s.host, total);
-    if (!locked.ok || locked.locked_bytes < total) { e = "cannot lock the device RAM snapshot: " + locked.note; free_host(s); return false; }
+    if (!locked.ok || locked.locked_bytes < total) { free_host(s); strata::core::resident::unlock_all(); e = "cannot lock the device RAM snapshot: " + locked.note; return false; }
     for (auto& [p, b] : s.blocks)
-        if (!check(cuMemcpyDtoH(s.host + b.offset, b.va, b.bytes), e, "save device contents")) { free_host(s); return false; }
+        if (!check(cuMemcpyDtoH(s.host + b.offset, b.va, b.bytes), e, "save device contents")) { free_host(s); strata::core::resident::unlock_all(); return false; }
     s.sleeping = true;
     for (auto& [p, b] : s.blocks) {
         if (!check(cuMemUnmap(b.va, b.physical), e, "release device mapping")) {
