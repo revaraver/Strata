@@ -1,4 +1,5 @@
 #include "strata/core/remote_expert_opt.hpp"
+#include "strata/core/device_park.hpp"
 #include "strata/core/remote_experts.hpp"
 #include "strata/core/on_device.hpp"
 #include "strata/kernels/cpu/expert_layout.hpp"
@@ -63,7 +64,7 @@ bool RemoteExpertOpt::init(std::string& err) {
     m_mask_ = reinterpret_cast<int32_t*>(m_sum_ + MAXT * H);
     for (auto& p : peers_) {
         const OnDevice on(p.remote->device_);
-        if (!check(cudaMalloc((void**) &p.sum, MAXT * H * sizeof(float)), err)) return false;
+        if (!check(strata::core::park::allocate((void**) &p.sum, MAXT * H * sizeof(float)), err)) return false;
     }
     return true;
 }
@@ -72,7 +73,7 @@ RemoteExpertOpt::~RemoteExpertOpt() {
     for (auto& p : peers_) {
         const OnDevice on(p.remote->device_);
         if (p.remote->stream_) cudaStreamSynchronize(p.remote->stream_);
-        if (p.sum) cudaFree(p.sum);
+        if (p.sum) strata::core::park::deallocate(p.sum);
         p.remote->remote_opt_ = nullptr;
     }
     if (h_sum_) cudaFreeHost(h_sum_);

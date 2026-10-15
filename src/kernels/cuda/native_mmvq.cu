@@ -24,6 +24,7 @@
 // SOFTWARE.
 
 #include "strata/kernels/native_mmvq.hpp"
+#include "strata/core/device_park.hpp"
 #include "strata/kernels/dp4a.hpp"
 #include "strata/kernels/q8_1_finite.hpp"
 #include "strata/kernels/iq_kernels.hpp"
@@ -2050,9 +2051,9 @@ bool native_q6_k_pack(const void* weights, int n_in, int n_out, const char* what
         std::memcpy(packed.data() + o_d + b * 2, &host[b].d, 2);
     }
     void* dev = nullptr;
-    if (cudaMalloc(&dev, total) != cudaSuccess) { cudaGetLastError(); return false; }
+    if (strata::core::park::allocate(&dev, total) != cudaSuccess) { cudaGetLastError(); return false; }
     if (cudaMemcpy(dev, packed.data(), total, cudaMemcpyHostToDevice) != cudaSuccess) {
-        cudaFree(dev); cudaGetLastError(); return false;
+        strata::core::park::deallocate(dev); cudaGetLastError(); return false;
     }
     auto* base = static_cast<uint8_t*>(dev);
     q6_packed_registry()[weights] = Q6Packed{dev, reinterpret_cast<const int*>(base),
@@ -2074,9 +2075,9 @@ bool native_q6_k_pack(const void* weights, int n_in, int n_out, const char* what
             blk.ds = __floats2half2_rn(0.001f + float(r >> 8) * 1e-9f, 0.0f);
         }
         void *dx = nullptr, *ya = nullptr, *yb = nullptr;
-        cudaMalloc(&dx, hx.size() * sizeof(Q81Block));
-        cudaMalloc(&ya, std::size_t(4) * n_out * 4);
-        cudaMalloc(&yb, std::size_t(4) * n_out * 4);
+        strata::core::park::allocate(&dx, hx.size() * sizeof(Q81Block));
+        strata::core::park::allocate(&ya, std::size_t(4) * n_out * 4);
+        strata::core::park::allocate(&yb, std::size_t(4) * n_out * 4);
         cudaMemcpy(dx, hx.data(), hx.size() * sizeof(Q81Block), cudaMemcpyHostToDevice);
         std::vector<float> a(std::size_t(4) * n_out), c(std::size_t(4) * n_out);
         bool same = true;
@@ -2134,7 +2135,7 @@ bool native_q6_k_pack(const void* weights, int n_in, int n_out, const char* what
             g_q6p_grid_override = 0;
         }
         cudaEventDestroy(e0); cudaEventDestroy(e1);
-        cudaFree(dx); cudaFree(ya); cudaFree(yb);
+        strata::core::park::deallocate(dx); strata::core::park::deallocate(ya); strata::core::park::deallocate(yb);
         cudaStreamDestroy(s);
         if (!same) { native_q6_k_unpack(weights); return false; }
     }
@@ -2145,7 +2146,7 @@ void native_q6_k_unpack(const void* weights) {
     auto& registry = q6_packed_registry();
     const auto found = registry.find(weights);
     if (found == registry.end()) return;
-    cudaFree(found->second.base);
+    strata::core::park::deallocate(found->second.base);
     registry.erase(found);
 }
 

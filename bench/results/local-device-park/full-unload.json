@@ -1,0 +1,147 @@
+[
+  {
+    "phase": "full-unload",
+    "elapsed_s": 28.6374,
+    "before": {
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "parked": false,
+      "state": "idle",
+      "gpu": {
+        "used": 46125723648,
+        "free": 5401300992,
+        "total": 51527024640
+      },
+      "physical_used": 127589826560,
+      "engines": [
+        97776
+      ]
+    },
+    "after": {
+      "ram": {
+        "weights_bytes": 0,
+        "session_bytes": 10188260324,
+        "segments": 617,
+        "locked": true,
+        "error": null
+      },
+      "parked": false,
+      "state": "unloaded",
+      "gpu": {
+        "used": 4109889536,
+        "free": 47417135104,
+        "total": 51527024640
+      },
+      "physical_used": 33451716608,
+      "engines": []
+    },
+    "result": {
+      "status": "unloaded",
+      "session_kept": true
+    }
+  },
+  {
+    "phase": "cold-load-after-full",
+    "elapsed_s": 66.0065,
+    "before": {
+      "ram": {
+        "weights_bytes": 0,
+        "session_bytes": 10188260324,
+        "segments": 617,
+        "locked": true,
+        "error": null
+      },
+      "parked": false,
+      "state": "unloaded",
+      "gpu": {
+        "used": 4109889536,
+        "free": 47417135104,
+        "total": 51527024640
+      },
+      "physical_used": 33452650496,
+      "engines": []
+    },
+    "after": {
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "parked": false,
+      "state": "idle",
+      "gpu": {
+        "used": 48368824320,
+        "free": 3158200320,
+        "total": 51527024640
+      },
+      "physical_used": 133102559232,
+      "engines": [
+        93384
+      ]
+    },
+    "result": {
+      "status": "loaded"
+    }
+  },
+  {
+    "phase": "long-reuse-after-full",
+    "elapsed_s": 1.2219,
+    "before": {
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "parked": false,
+      "state": "idle",
+      "gpu": {
+        "used": 48368824320,
+        "free": 3158200320,
+        "total": 51527024640
+      },
+      "physical_used": 133101645824,
+      "engines": [
+        93384
+      ]
+    },
+    "after": {
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "parked": false,
+      "state": "idle",
+      "gpu": {
+        "used": 48439734272,
+        "free": 3087290368,
+        "total": 51527024640
+      },
+      "physical_used": 133047496704,
+      "engines": [
+        93384
+      ]
+    },
+    "result": {
+      "usage": {
+        "prompt_tokens": 232093,
+        "completion_tokens": 12,
+        "total_tokens": 232105,
+        "prompt_tokens_details": {
+          "cached_tokens": 232088
+        }
+      }
+    }
+  }
+]

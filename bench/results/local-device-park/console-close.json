@@ -1,0 +1,52 @@
+{
+  "window": "Strata IQ3_S - RAM acceptance 97076",
+  "window_owner": 63692,
+  "server": 97076,
+  "children": [
+    97076,
+    91992,
+    88488,
+    93384,
+    74692,
+    73532
+  ],
+  "elapsed_s": 30.188,
+  "before": {
+    "gpu": {
+      "used": 48346148864,
+      "free": 3180875776,
+      "total": 51527024640
+    },
+    "physical_used": 132804759552,
+    "ram": {
+      "weights_bytes": 83976213228,
+      "session_bytes": 0,
+      "segments": 1090,
+      "locked": true,
+      "error": null
+    }
+  },
+  "after": {
+    "remaining_pids": [
+      97076
+    ],
+    "port_8080_listeners": [],
+    "gpu": {
+      "used": 3793346560,
+      "free": 47733678080,
+      "total": 51527024640
+    },
+    "physical_used": 73634336768
+  },
+  "cleanup_followup": {
+    "remaining_pids": [],
+    "port_8080_listeners": [],
+    "gpu": {
+      "used": 3729907712,
+      "free": 47797116928,
+      "total": 51527024640
+    },
+    "physical_used": 23148584960
+  },
+  "passed": true
+}

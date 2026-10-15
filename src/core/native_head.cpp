@@ -1,4 +1,5 @@
 #include "strata/core/native_head.hpp"
+#include "strata/core/device_park.hpp"
 #include "strata/artifact/gguf_reader.hpp"
 #include "strata/kernels/iq_kernels.hpp"
 #include "strata/kernels/native_mmvq.hpp"
@@ -18,8 +19,8 @@ NativeHead::~NativeHead() {
 
 void NativeHead::unload() {
     if (weights_) strata::kernels::native_q6_k_unpack(weights_);
-    if (scratch_) cudaFree(scratch_);
-    if (weights_) cudaFree(weights_);
+    if (scratch_) strata::core::park::deallocate(scratch_);
+    if (weights_) strata::core::park::deallocate(weights_);
     scratch_ = nullptr;
     weights_ = nullptr;
 }
@@ -52,15 +53,15 @@ bool NativeHead::load(const std::vector<std::string>& shards, int64_t n_in, int6
         }
         void* weights = nullptr;
         void* scratch = nullptr;
-        cudaError_t status = cudaMalloc(&weights, bytes);
+        cudaError_t status = strata::core::park::allocate(&weights, bytes);
         if (status == cudaSuccess)
-            status = cudaMalloc(&scratch, strata::kernels::native_q8_1_bytes((int) n_in, 1));
+            status = strata::core::park::allocate(&scratch, strata::kernels::native_q8_1_bytes((int) n_in, 1));
         strata::platform::advise_willneed(gguf.tensor_data(*tensor), bytes);
         if (status == cudaSuccess)
             status = cudaMemcpy(weights, gguf.tensor_data(*tensor), bytes, cudaMemcpyHostToDevice);
         if (status != cudaSuccess) {
-            if (scratch) cudaFree(scratch);
-            if (weights) cudaFree(weights);
+            if (scratch) strata::core::park::deallocate(scratch);
+            if (weights) strata::core::park::deallocate(weights);
             err = std::string("native head upload: ") + cudaGetErrorString(status);
             return false;
         }
@@ -114,7 +115,7 @@ const NativeEmbed* native_embed() { return g_embed; }
 
 NativeEmbed::~NativeEmbed() {
     if (host_) cudaFreeHost(host_);
-    else if (dev_) cudaFree(const_cast<void*>(dev_));   // the VRAM fallback below
+    else if (dev_) strata::core::park::deallocate(const_cast<void*>(dev_));   // the VRAM fallback below
 }
 
 bool NativeEmbed::load(const std::vector<std::string>& shards, int64_t n_embd, int64_t n_vocab, std::string& err) {
@@ -151,9 +152,9 @@ bool NativeEmbed::load(const std::vector<std::string>& shards, int64_t n_embd, i
             cudaGetLastError();
             host_ = nullptr;
             void* d = nullptr;
-            if (cudaMalloc(&d, bytes_) != cudaSuccess ||
+            if (strata::core::park::allocate(&d, bytes_) != cudaSuccess ||
                 cudaMemcpy(d, gguf.tensor_data(*t), bytes_, cudaMemcpyHostToDevice) != cudaSuccess) {
-                if (d) cudaFree(d);
+                if (d) strata::core::park::deallocate(d);
                 cudaGetLastError();
                 err = "native embedding: cannot pin " + std::to_string(bytes_ >> 20) + " MiB: " +
                       cudaGetErrorString(host_err) + ", nor place it in VRAM";
@@ -173,9 +174,9 @@ bool NativeEmbed::load(const std::vector<std::string>& shards, int64_t n_embd, i
             if (cudaHostGetDevicePointer(&d, host_, 0) != cudaSuccess || d == nullptr) {
                 cudaGetLastError();
                 d = nullptr;
-                if (cudaMalloc(&d, bytes_) != cudaSuccess ||
+                if (strata::core::park::allocate(&d, bytes_) != cudaSuccess ||
                     cudaMemcpy(d, gguf.tensor_data(*t), bytes_, cudaMemcpyHostToDevice) != cudaSuccess) {
-                    if (d) cudaFree(d);
+                    if (d) strata::core::park::deallocate(d);
                     cudaGetLastError();
                     err = "native embedding: no device alias for the mapped table, and no VRAM to copy it into";
                     return false;

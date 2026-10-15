@@ -1,5 +1,6 @@
 // src/prefill/kernels.cu - see include/strata/prefill/kernels.hpp.
 #include "strata/prefill/kernels.hpp"
+#include "strata/core/device_park.hpp"
 #include "strata/kernels/mrope.hpp"
 #include "strata/kernels/gfx_arch.hpp"
 #include "strata/kernels/router_top10.hpp"
@@ -1006,7 +1007,7 @@ float* gdn_chunk_scratch() {
     if (cudaGetDevice(&dev) != cudaSuccess || dev < 0 || dev >= 64) { cudaGetLastError(); return nullptr; }
     if (bufs[dev] == nullptr) {
         const size_t n = (size_t) (GSB / GCH) * HV * (2 * GCH * GCH + GCH);
-        if (cudaMalloc((void**) &bufs[dev], n * sizeof(float)) != cudaSuccess) {
+        if (strata::core::park::allocate((void**) &bufs[dev], n * sizeof(float)) != cudaSuccess) {
             cudaGetLastError();
             bufs[dev] = nullptr;
         }

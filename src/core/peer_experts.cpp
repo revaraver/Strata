@@ -1,5 +1,6 @@
 // src/core/peer_experts.cpp - see include/strata/core/peer_experts.hpp.
 #include "strata/core/peer_experts.hpp"
+#include "strata/core/device_park.hpp"
 
 #include "strata/kernels/cpu/expert_layout.hpp"
 #include "strata/kernels/elementwise.hpp"
@@ -58,11 +59,11 @@ void PeerExperts::close() {
         if (stream_) cudaStreamSynchronize(stream_);
         if (refill_) cudaStreamSynchronize(refill_);
         cache_.close();
-        if (d_x_) cudaFree(d_x_);
-        if (d_out_) cudaFree(d_out_);
-        if (d_meta_) cudaFree(d_meta_);
-        if (d_q8_) cudaFree(d_q8_);
-        if (d_scratch_) cudaFree(d_scratch_);
+        if (d_x_) strata::core::park::deallocate(d_x_);
+        if (d_out_) strata::core::park::deallocate(d_out_);
+        if (d_meta_) strata::core::park::deallocate(d_meta_);
+        if (d_q8_) strata::core::park::deallocate(d_q8_);
+        if (d_scratch_) strata::core::park::deallocate(d_scratch_);
         if (h_x_) cudaFreeHost(h_x_);
         if (h_out_) cudaFreeHost(h_out_);
         if (h_meta_) cudaFreeHost(h_meta_);
@@ -125,11 +126,11 @@ bool PeerExperts::open(int device, const std::vector<std::pair<int32_t, int32_t>
         ck(cudaHostAlloc((void**) &h_x_, (size_t) CAP * H * sizeof(float), cudaHostAllocPortable | cudaHostAllocMapped), "input staging", err) &&
         ck(cudaHostAlloc((void**) &h_out_, (size_t) CAP * H * sizeof(float), cudaHostAllocPortable | cudaHostAllocMapped), "result staging", err) &&
         ck(cudaHostAlloc(&h_meta_, sizeof(Meta), cudaHostAllocPortable | cudaHostAllocMapped), "plan staging", err) &&
-        ck(cudaMalloc((void**) &d_x_, (size_t) CAP * H * sizeof(float)), "input", err) &&
-        ck(cudaMalloc((void**) &d_out_, (size_t) CAP * H * sizeof(float)), "result", err) &&
-        ck(cudaMalloc(&d_meta_, sizeof(Meta)), "plan", err) &&
-        ck(cudaMalloc((void**) &d_q8_, (size_t) CAP * (H / 32) * 36), "activations", err) &&
-        ck(cudaMalloc(&d_scratch_, scratch), "scratch", err);
+        ck(strata::core::park::allocate((void**) &d_x_, (size_t) CAP * H * sizeof(float)), "input", err) &&
+        ck(strata::core::park::allocate((void**) &d_out_, (size_t) CAP * H * sizeof(float)), "result", err) &&
+        ck(strata::core::park::allocate(&d_meta_, sizeof(Meta)), "plan", err) &&
+        ck(strata::core::park::allocate((void**) &d_q8_, (size_t) CAP * (H / 32) * 36), "activations", err) &&
+        ck(strata::core::park::allocate(&d_scratch_, scratch), "scratch", err);
     if (!alloc_ok) { close(); return false; }
 
     // the pairs the primary does not hold, in rank order, as many as fit

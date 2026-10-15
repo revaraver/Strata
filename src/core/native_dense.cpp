@@ -1,4 +1,5 @@
 #include "strata/core/native_dense.hpp"
+#include "strata/core/device_park.hpp"
 #include <cstdlib>
 #include "strata/core/weights.hpp"
 #include "strata/artifact/gguf_reader.hpp"
@@ -150,7 +151,7 @@ bool eligible(const strata::TensorInfo& tensor, bool include_ple_key) {
     for (const char* suffix : suffixes) if (name.ends_with(suffix)) return true;
     return false;
 }
-struct DeviceFree { void operator()(void* p) const { if (p) cudaFree(p); } };
+struct DeviceFree { void operator()(void* p) const { if (p) strata::core::park::deallocate(p); } };
 using DevicePtr = std::unique_ptr<void, DeviceFree>;
 struct Pending {
     WeightRef* ref;
@@ -244,8 +245,8 @@ NativeDense::~NativeDense() {
             for (void*& b : cl)
                 if (b != nullptr && std::find(weights_.begin(), weights_.end(), b) != weights_.end()) b = nullptr;
     for (const void* p : packed_keys_) strata::kernels::native_q8_0_packed_unregister(p);
-    if (scratch_) cudaFree(scratch_);
-    for (void* p : weights_) cudaFree(p);
+    if (scratch_) strata::core::park::deallocate(scratch_);
+    for (void* p : weights_) strata::core::park::deallocate(p);
 }
 
 bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& table, std::string& err,
@@ -350,7 +351,7 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
                 const auto bytes = strata::kernels::native_mmvq_weight_bytes(
                     tensor.type, (int) ref.ne0, (int) ref.ne1);
                 void* allocation = nullptr;
-                auto status = cudaMalloc(&allocation, bytes);
+                auto status = strata::core::park::allocate(&allocation, bytes);
                 DevicePtr data(allocation);
                 if (status == cudaSuccess)
                     status = cudaMemcpy(data.get(), gguf.tensor_data(tensor), bytes, cudaMemcpyHostToDevice);
@@ -370,7 +371,7 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
                     strata::kernels::native_q8_0_pack_host(gguf.tensor_data(tensor), host.data(), (int) ref.ne0,
                                                            (int) ref.ne1);
                     void* packed_allocation = nullptr;
-                    auto packed_status = cudaMalloc(&packed_allocation, bytes);
+                    auto packed_status = strata::core::park::allocate(&packed_allocation, bytes);
                     packed.reset(packed_allocation);
                     if (packed_status == cudaSuccess)
                         packed_status = cudaMemcpy(packed.get(), host.data(), bytes, cudaMemcpyHostToDevice);
@@ -398,7 +399,7 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
                     void* p = nullptr;
                     std::vector<uint8_t> q8;
                     if (f32_inject) q8 = q8_0_of((const float*) gguf.tensor_data(tensor), (uint64_t) ref.ne0 * (uint64_t) ref.ne1);
-                    if (cudaMalloc(&p, bytes) != cudaSuccess ||
+                    if (strata::core::park::allocate(&p, bytes) != cudaSuccess ||
                         cudaMemcpy(p, f32_inject ? (const void*) q8.data() : gguf.tensor_data(tensor), bytes,
                                    cudaMemcpyHostToDevice) != cudaSuccess) {
                         err = "native dense (STRATA_HC_Q8) upload " + tensor.name; return false;
@@ -424,7 +425,7 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
                 }
                 const uint64_t nb = (uint64_t) ref.elements / 32, bytes = nb * 34;
                 void* p = nullptr;
-                if (cudaMalloc(&p, bytes) != cudaSuccess) { err = "native dense (STRATA_HC_Q8) alloc " + name; return false; }
+                if (strata::core::park::allocate(&p, bytes) != cudaSuccess) { err = "native dense (STRATA_HC_Q8) alloc " + name; return false; }
                 weights_.push_back(p);
                 if (skipped) {
                     std::vector<uint16_t> host;
@@ -454,7 +455,7 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
                 for (int c = 0; c < 2; ++c)
                     for (int i = 0; i < 2; ++i) {
                         void* b = nullptr;
-                        if (cudaMalloc(&b, (size_t) elems * 2) != cudaSuccess) { err = "native dense (STRATA_HC_Q8): scratch alloc"; return false; }
+                        if (strata::core::park::allocate(&b, (size_t) elems * 2) != cudaSuccess) { err = "native dense (STRATA_HC_Q8): scratch alloc"; return false; }
                         weights_.push_back(b);
                         g_hc_scratch[dev][c][i] = b;
                     }
@@ -466,7 +467,7 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
         }
         if (pending.empty()) { err = "native dense: no supported GDN/QSA matrices in supplied shards"; return false; }
         void* allocation = nullptr;
-        const auto status = cudaMalloc(&allocation, strata::kernels::native_q8_1_bytes(max_in));
+        const auto status = strata::core::park::allocate(&allocation, strata::kernels::native_q8_1_bytes(max_in));
         DevicePtr scratch(allocation);
         if (status != cudaSuccess) { err = std::string("native dense scratch: ") + cudaGetErrorString(status); return false; }
         // All checks and allocations finish before publishing any reference.

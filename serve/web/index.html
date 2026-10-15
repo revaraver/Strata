@@ -7,7 +7,7 @@
 <link rel="icon" href="web/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="web/tokens.css">
 <link rel="stylesheet" href="web/components.css">
-<link rel="stylesheet" href="web/app.css?v=zh-vramcard-6">
+<link rel="stylesheet" href="web/app.css?v=zh-device-park-1">
 <script>
   // the theme before the first paint: the saved choice, else the system's
   try {
@@ -264,9 +264,8 @@
   <div class="vf-btns">
     <button class="st-btn" id="vf-fast" type="button" title="把预留显存切到高速档">高速</button>
     <button class="st-btn" id="vf-mid" type="button" title="把预留显存切到中速档">中速</button>
-    <button class="st-btn" id="vf-zero" type="button" title="零速：把几乎整卡显存让给其他程序；引擎不退出，推理变慢，切回秒级">零速</button>
-    <button class="st-btn" id="vf-zero-offload" type="button" title="卸载：让出几乎全部显存给其他程序；下一条对话自动恢复到之前的高速/中速档">卸载</button>
-    <button class="st-btn st-btn--secondary" id="vf-unload" type="button" title="内存卸载：引擎退出，权重和对话留在内存里；显存全部交还，下一条请求自动加载并恢复对话">内存卸载</button>
+    <button class="st-btn" id="vf-zero" type="button" title="零速：专家缓存缩到最小，保持低显存推理；下一条对话仍使用零速">零速</button>
+    <button class="st-btn" id="vf-unload" type="button" title="卸载：显存内容保存在锁定 RAM，保留引擎与对话；下一条请求恢复原档位">卸载</button>
     <button class="st-btn st-btn--secondary" id="vf-full" type="button" title="完全卸载：释放内存中的权重，保留对话；下一条请求重新读取权重">完全卸载</button>
   </div>
   <label class="vf-set">高速预留<input class="st-input" id="vf-fast-mib" type="number" min="0" step="512" title="高速档为其他程序预留的显存（MiB）"><span class="muted">MiB</span></label>
@@ -275,6 +274,6 @@
   <p class="muted small" id="vf-note"></p>
 </aside>
 <div class="st-toasts" id="toasts" aria-live="polite"></div>
-<script src="web/app.js?v=zh-vramcard-6"></script>
+<script src="web/app.js?v=zh-device-park-1"></script>
 </body>
 </html>

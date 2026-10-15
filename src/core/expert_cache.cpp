@@ -1,5 +1,6 @@
 // src/core/expert_cache.cpp - R4's slot storage and residency table.  Read the header first.
 #include "strata/core/expert_cache.hpp"
+#include "strata/core/device_park.hpp"
 
 // #533's segmented cache uses CUDA's virtual memory management (cuMem*): not on HIP, neither the RDNA backend nor
 // the gfx906 compat build (PR #638), which compiles this file as HIP without STRATA_USE_HIP
@@ -516,10 +517,10 @@ bool ExpertCache::open(int64_t n_slots, int64_t n_layers, int64_t n_expert, int6
         }
         base_ = r->base();
         vmm_ = std::move(r);
-    } else if (cudaMalloc((void**) &base_, (size_t) want) != cudaSuccess) {
+    } else if (strata::core::park::allocate((void**) &base_, (size_t) want) != cudaSuccess) {
         base_ = nullptr;
         char buf[256];
-        std::snprintf(buf, sizeof buf, "ExpertCache: cudaMalloc(%.2f GiB) failed: %s",
+        std::snprintf(buf, sizeof buf, "ExpertCache: strata::core::park::allocate(%.2f GiB) failed: %s",
                       (double) want / 1073741824.0, cudaGetErrorString(cudaGetLastError()));
         err = buf;
         return false;
@@ -604,7 +605,7 @@ void ExpertCache::close() {
         vmm_.reset();   // unmaps and frees every chunk it still holds
         base_ = nullptr;
     } else if (base_ != nullptr) {
-        cudaFree(base_);
+        strata::core::park::deallocate(base_);
         base_ = nullptr;
     }
     residency_.clear();

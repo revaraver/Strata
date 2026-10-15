@@ -1,5 +1,6 @@
 // src/core/expert_source.cpp - the adapter.  See the header for the three clauses of the contract.
 #include "strata/core/expert_source.hpp"
+#include "strata/core/device_park.hpp"
 #include "strata/core/foresight_swap.hpp"
 #include "strata/core/on_device.hpp"
 #include "strata/platform/aux_cpus.hpp"
@@ -4954,7 +4955,7 @@ bool ForesightSwap::init(int slots_per_layer, int64_t layers, int64_t experts, c
         if (bytes == 0) continue;
         const OnDevice on(devices[c]);
         cudaStream_t s = nullptr;
-        if (cudaMalloc(&card_mem[c], bytes) != cudaSuccess ||
+        if (strata::core::park::allocate(&card_mem[c], bytes) != cudaSuccess ||
             cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking) != cudaSuccess) {
             cudaGetLastError();
             err = "cannot allocate " + std::to_string(bytes >> 20) + " MiB on CUDA" + std::to_string(devices[c]) +
@@ -4996,7 +4997,7 @@ ForesightSwap::~ForesightSwap() {
     for (size_t c = 0; c < card_dev.size(); ++c) {
         const OnDevice on(card_dev[c]);
         if (card_stream[c]) cudaStreamSynchronize((cudaStream_t) card_stream[c]);
-        if (card_mem[c]) cudaFree(card_mem[c]);
+        if (card_mem[c]) strata::core::park::deallocate(card_mem[c]);
         if (card_stream[c]) cudaStreamDestroy((cudaStream_t) card_stream[c]);
     }
     if (slot)

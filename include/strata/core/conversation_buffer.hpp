@@ -1,6 +1,7 @@
 #pragma once
 
 #include "strata/core/progress.hpp"
+#include "strata/core/resident_allocator.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -122,7 +123,7 @@ public:
     }
 
 private:
-    using Segment = std::vector<uint8_t>;
+    using Segment = std::vector<uint8_t, ResidentAllocator<uint8_t>>;
     // A fresh capture allocates exactly its payload. Later appends reserve
     // geometrically growing segments, bounded by 16 MiB. Small chat turns then
     // extend the final allocation instead of adding one transfer per turn.

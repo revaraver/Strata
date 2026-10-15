@@ -1,5 +1,6 @@
 // src/prefill/gemm.cu - see include/strata/prefill/gemm.hpp.
 #include "strata/prefill/gemm.hpp"
+#include "strata/core/device_park.hpp"
 #include "strata/kernels/dequant_bf16.hpp"
 #if defined(STRATA_PREFILL_MMQ) && defined(__HIPCC__)
 #include "strata/prefill/moe_mmq.hpp"
@@ -377,17 +378,17 @@ bool prompt_f16() {
 Gemm::~Gemm() {
 #if defined(STRATA_PREFILL_MMQ) && defined(__HIPCC__)
     delete static_cast<strata::prefill::mmq::Context*>(mmq_ctx_);
-    if (mmq_buf_) cudaFree(mmq_buf_);
+    if (mmq_buf_) strata::core::park::deallocate(mmq_buf_);
 #endif
 #if defined(__HIPCC__) && defined(STRATA_HIPBLASLT_AVAILABLE)
     delete static_cast<HipLtState*>(hipblaslt_state_);
 #endif
     if (handle_) cublasDestroy((cublasHandle_t) handle_);
-    if (tc_w_) cudaFree(tc_w_);
-    if (tc_x_) cudaFree(tc_x_);
+    if (tc_w_) strata::core::park::deallocate(tc_w_);
+    if (tc_x_) strata::core::park::deallocate(tc_x_);
     if (!external_) {
-        if (scratch_) cudaFree(scratch_);
-        if (workspace_) cudaFree(workspace_);
+        if (scratch_) strata::core::park::deallocate(scratch_);
+        if (workspace_) strata::core::park::deallocate(workspace_);
     }
 }
 
@@ -439,7 +440,7 @@ bool Gemm::init(void* stream, int64_t scratch_elems, std::string& err) {
     note(cublasSetStream(h, (cudaStream_t) stream), "cublasSetStream");
     // A fixed workspace so the handle never allocates on the way (and graphs could capture it later).
     const size_t ws = 32u << 20;
-    if (const cudaError_t e = cudaMalloc(&workspace_, ws); e != cudaSuccess) {
+    if (const cudaError_t e = strata::core::park::allocate(&workspace_, ws); e != cudaSuccess) {
         err = std::string("prefill gemm: workspace of 32 MiB: ") + cudaGetErrorString(e);
         return false;
     }
@@ -449,7 +450,7 @@ bool Gemm::init(void* stream, int64_t scratch_elems, std::string& err) {
     hipblaslt_state_ = create_hipblaslt_state(workspace_, ws).release();
 #endif
     if (scratch_elems > 0) {
-        if (const cudaError_t e = cudaMalloc((void**) &scratch_, (size_t) scratch_elems * 2); e != cudaSuccess) {
+        if (const cudaError_t e = strata::core::park::allocate((void**) &scratch_, (size_t) scratch_elems * 2); e != cudaSuccess) {
             err = "prefill gemm: dequant scratch of " + std::to_string(scratch_elems * 2 >> 20) + " MiB: " +
                   cudaGetErrorString(e);
             return false;
@@ -531,10 +532,10 @@ int bf16_path() {
 }
 bool grow(uint16_t*& p, int64_t& have, int64_t want) {   // `have`, `want`: 2-byte elements
     if (have >= want) return true;
-    if (p) cudaFree(p);
+    if (p) strata::core::park::deallocate(p);
     p = nullptr;
     have = 0;
-    if (cudaMalloc((void**) &p, (size_t) want * 2) != cudaSuccess) { cudaGetLastError(); p = nullptr; return false; }
+    if (strata::core::park::allocate((void**) &p, (size_t) want * 2) != cudaSuccess) { cudaGetLastError(); p = nullptr; return false; }
     have = want;
     return true;
 }
@@ -836,7 +837,7 @@ bool Gemm::native_mmq(const uint16_t* X, int type, const void* W, float* Y, int6
     const size_t ident_off = up(mmq::q8_bytes(kRows, kMaxK));
     const size_t bounds_off = ident_off + up((size_t) kRows * 4);
     if (!mmq_buf_) {
-        if (cudaMalloc(&mmq_buf_, bounds_off + 256) != cudaSuccess) {
+        if (strata::core::park::allocate(&mmq_buf_, bounds_off + 256) != cudaSuccess) {
             cudaGetLastError();
             mmq_failed_ = true;
             return false;

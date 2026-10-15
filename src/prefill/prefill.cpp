@@ -1,5 +1,6 @@
 // src/prefill/prefill.cpp - see include/strata/prefill/prefill.hpp.
 #include "strata/prefill/prefill.hpp"
+#include "strata/core/device_park.hpp"
 #include <atomic>
 #if defined(__cpp_lib_atomic_wait)
 #define STRATA_ATOMIC_WAIT 1   // #1488: std::atomic::wait / notify_all are a GCC 11 library feature; GCC 10 spins instead
@@ -406,7 +407,7 @@ struct Alloc {
         }
         if (base != nullptr && !spill) { ok = false; failed_bytes = bytes; return nullptr; }
         void* p = nullptr;
-        if (cudaMalloc(&p, bytes) != cudaSuccess) { ok = false; failed_bytes = bytes; return nullptr; }
+        if (strata::core::park::allocate(&p, bytes) != cudaSuccess) { ok = false; failed_bytes = bytes; return nullptr; }
         spilled = true;
         owned->push_back(p);
         used += bytes;
@@ -686,7 +687,7 @@ struct PeerPrefill {
         if (s) cudaStreamSynchronize(s);
         ctx.reset();
         up_ring.release();
-        for (void* p : owned) cudaFree(p);
+        for (void* p : owned) strata::core::park::deallocate(p);
         if (ev_done) cudaEventDestroy(ev_done);
         if (s_out) cudaStreamSynchronize(s_out);
         for (cudaEvent_t e : ev_grp) if (e) cudaEventDestroy(e);
@@ -964,7 +965,7 @@ void Prefill::release() {
         if (e) cudaEventDestroy(e);
     for (cudaEvent_t e : impl_->cpu_wall)
         if (e) cudaEventDestroy(e);
-    for (void* p : impl_->owned) cudaFree(p);
+    for (void* p : impl_->owned) strata::core::park::deallocate(p);
 }
 
 namespace {
@@ -1108,7 +1109,7 @@ bool Prefill::init(const core::WeightTable& wt, const core::ModelGeometry& g, co
             return false;
         }
     if (m.tok_dev == nullptr) {
-        if (const cudaError_t e = cudaMalloc((void**) &m.tok_dev, (size_t) chunk * sizeof(int32_t)); e != cudaSuccess) {
+        if (const cudaError_t e = strata::core::park::allocate((void**) &m.tok_dev, (size_t) chunk * sizeof(int32_t)); e != cudaSuccess) {
             err = std::string("prefill: the token id buffer (") + cudaGetErrorString(e) + ")";
             return false;
         }
@@ -1200,7 +1201,7 @@ bool Prefill::init(const core::WeightTable& wt, const core::ModelGeometry& g, co
         const int64_t pages = ss.qsa_states[ss.qsa_primary()].n_pages;
         std::vector<int32_t> ident((size_t) pages);
         for (int64_t i = 0; i < pages; ++i) ident[(size_t) i] = (int32_t) i;
-        if (cudaMalloc((void**) &m.ident_table, ident.size() * 4) != cudaSuccess ||
+        if (strata::core::park::allocate((void**) &m.ident_table, ident.size() * 4) != cudaSuccess ||
             cudaMemcpy(m.ident_table, ident.data(), ident.size() * 4, cudaMemcpyHostToDevice) != cudaSuccess)
             ok = false;
         else
@@ -1731,7 +1732,7 @@ bool Prefill::set_peer(core::PeerExperts* peer, int64_t cap_rows, std::string& e
     }
     auto take = [&](size_t bytes) -> void* {
         void* p = nullptr;
-        if (!ok || cudaMalloc(&p, bytes) != cudaSuccess) { ok = false; return nullptr; }
+        if (!ok || strata::core::park::allocate(&p, bytes) != cudaSuccess) { ok = false; return nullptr; }
         pp->owned.push_back(p);
         return p;
     };
@@ -2857,9 +2858,9 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                         static long long queries = 0, same = 0, sel_queries = 0;
                         const int64_t rows = st.idx_pooled_rows;
                         if (pooled16 == nullptr &&
-                            (cudaMalloc((void**) &pooled16, (size_t) rows * s.idx_dim * 4) != cudaSuccess ||
-                             cudaMalloc((void**) &dead16, (size_t) s.idx_dim * 4) != cudaSuccess ||
-                             cudaMalloc((void**) &ids16, (size_t) (m.T * m.cap) * 4) != cudaSuccess)) {
+                            (strata::core::park::allocate((void**) &pooled16, (size_t) rows * s.idx_dim * 4) != cudaSuccess ||
+                             strata::core::park::allocate((void**) &dead16, (size_t) s.idx_dim * 4) != cudaSuccess ||
+                             strata::core::park::allocate((void**) &ids16, (size_t) (m.T * m.cap) * 4) != cudaSuccess)) {
                             err = "STRATA_IDX_FP16_CHECK: no room for its buffers";
                             return false;
                         }
@@ -4105,8 +4106,8 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                         --checks;
                         float *Rc = nullptr, *rc = nullptr;
                         uint16_t* xc = nullptr;
-                        cudaMalloc(&Rc, (size_t) T * D * 4); cudaMalloc(&rc, (size_t) T * HC * 4);
-                        cudaMalloc(&xc, (size_t) T * D * 2);
+                        strata::core::park::allocate(&Rc, (size_t) T * D * 4); strata::core::park::allocate(&rc, (size_t) T * HC * 4);
+                        strata::core::park::allocate(&xc, (size_t) T * D * 2);
                         cudaMemcpyAsync(Rc, m.R, (size_t) T * D * 4, cudaMemcpyDeviceToDevice, m.cs);
                         gr_write(Rc, m.bo, m.inj, HC, T, m.cs);
                         strata::kernels::cvec_apply(Rc, l, T, D, nullptr, 0, nullptr, 0, false, m.cs);
@@ -4123,7 +4124,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                         cudaMemcpyAsync(xa.data(), m.xn16, xa.size() * 2, cudaMemcpyDeviceToHost, m.cs);
                         cudaMemcpyAsync(xb.data(), xc, xb.size() * 2, cudaMemcpyDeviceToHost, m.cs);
                         cudaStreamSynchronize(m.cs);
-                        cudaFree(Rc); cudaFree(rc); cudaFree(xc);
+                        strata::core::park::deallocate(Rc); strata::core::park::deallocate(rc); strata::core::park::deallocate(xc);
                         std::fprintf(stderr, "strata: STRATA_CVEC_FUSE_CHECK layer %lld T %lld: R %s, rs %s, xn16 %s\n",
                                      (long long) l, (long long) T,
                                      std::memcmp(a.data(), b.data(), a.size() * 4) ? "DIFFERS" : "identical",

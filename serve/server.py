@@ -749,6 +749,8 @@ class StrataEngine:
     gpu_busy = None                      # #1317: () -> bool, "the GPU is working" (the telemetry's reading); a GPU at work is not frozen
     last_err = None                      # #997: an ERR that was its last stdout line (death_note says it)
     batch = 0                            # --batch: the engine's batch slots (0: one request at a time)
+    parked = False                       # process, CPU weights and CUDA registrations remain alive
+    device_park_enabled = False
 
     # `last`: the figures of the engine's last DONE line.  With batch slots several requests run at once, each on its
     # own thread, so each one reads its own request's figures (Service.run records them); one at a time, the one dict.
@@ -783,6 +785,8 @@ class StrataEngine:
                     from serve.windows_memory import MemoryKeeper
                     self.memory_keeper = MemoryKeeper(namespace)
         self.spawn = (exe, list(args), cwd, log, env, False, cpus)   # to start it again after it died (issue #27)
+        self.parked = False
+        self.device_park_enabled = os.name == "nt" and (env or os.environ).get("STRATA_DEVICE_PARK") == "1"
         self.session_save_reclaim = '--session-save-reclaim' in args
         paths = {k: v for k, v in zip(args, args[1:]) if k in ("--native", "--pack")}
         self.model_path = paths.get("--native") or paths.get("--pack", "pack/full")
@@ -1161,6 +1165,43 @@ class StrataEngine:
                 return out
             if time.time() > deadline:
                 raise EngineDied("the engine did not answer the VRAM command")
+
+    def device_command(self, command: str, reserve_mib=None, timeout=120.0) -> dict:
+        """PARK/WAKE, with FIFO and batch ctl held by the service. Intermediate VRAM replies update metrics."""
+        if not self.alive():
+            raise EngineDied("the engine is not running")
+        line = command + (f" {int(reserve_mib)}" if command == "WAKE" and reserve_mib is not None else "")
+        self.proc.stdin.write(line + "\n")
+        self.proc.stdin.flush()
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                line = self.lines.get(timeout=max(.1, deadline - time.monotonic()))
+            except queue.Empty:
+                raise EngineDied("the engine did not answer " + command) from None
+            if line is None:
+                raise EngineDied("the engine ended during " + command)
+            if line.startswith("ERR"):
+                raise ValueError(line[4:].strip())
+            prefix = line.split(" ", 1)[0]
+            if prefix not in ("VRAM", command):
+                if time.monotonic() > deadline:
+                    raise EngineDied("the engine did not answer " + command)
+                continue
+            out = {}
+            for field in line.split()[1:]:
+                k, _, v = field.partition("=")
+                try:
+                    out[k] = float(v) if "." in v else int(v)
+                except ValueError:
+                    out[k] = v
+            if prefix == "VRAM":
+                self.info["vram"] = out
+                continue
+            self.parked = bool(out.get("parked"))
+            self.info["device_park"] = out
+            self.info.setdefault("vram", {}).update(parked=self.parked, vram_free_mib=out.get("vram_free_mib"))
+            return out
 
     @staticmethod
     def sampling_keys(sampling: dict) -> str:
@@ -3462,6 +3503,7 @@ class Service:
         """Start the engine if it is not running (unloaded, or it died - issue #27), after the before_load hook and
         the free-VRAM check.  The caller holds self.fifo."""
         if self.loaded() and not self._vision_down():
+            self._wake_device()
             return
         hook_failed = None
         if self.before_load:
@@ -3521,6 +3563,7 @@ class Service:
                 raise EngineDied(f"the vision encoder failed to start: {e}") from e
             vision_started = True
         if self.loaded():
+            self._wake_device()
             return
         if getattr(self.engine, "unloaded", False):
             print("[strata] loading the model again (it was unloaded) ...", flush=True)
@@ -3546,6 +3589,22 @@ class Service:
                 print(f"[strata] the VRAM reserve ({self.vram_reserve} MiB) was not applied: {e}", flush=True)
         self._restore_vram_mode()
 
+    def _wake_device(self):
+        """Caller holds FIFO. Serialize one wake with parallel admission before any prompt reaches the engine."""
+        if not getattr(self.engine, "parked", False) and self.vram_auto_restore is None:
+            return
+        ctl = getattr(self.engine, "ctl", None) if getattr(self.engine, "batch", 0) else None
+        if ctl is not None:
+            ctl.acquire()
+        try:
+            if getattr(self.engine, "parked", False):
+                out = self.engine.device_command("WAKE", self._engine_reserve() if self.vision_held else self._vram_mode_reserve())
+                print(f"[strata] device resumed in {out.get('ms')} ms; same engine process, no model/session files", flush=True)
+            self._restore_vram_mode()
+        finally:
+            if ctl is not None:
+                ctl.release()
+
     def _vram_mode_reserve(self) -> int | None:
         """The reserve the current mode should run at (None: the engine's start reserve)."""
         return self.vram_reserve if self.vram_reserve_asked else None
@@ -3555,14 +3614,16 @@ class Service:
         mode it was in (high/mid).  The caller holds the fifo; the engine is loaded here."""
         if self.vram_auto_restore is None or not self.loaded() or not hasattr(self.engine, "vram"):
             return
-        want, self.vram_auto_restore = self.vram_auto_restore, None
+        want = self.vram_auto_restore
         try:
             out = self.engine.vram(want)
             self.vram_reserve = want
+            self.vram_auto_restore = None
             print(f"[strata] VRAM: the request restored the mode's reserve ({want} MiB): {out.get('vram_free_mib')} "
                   f"MiB free, expert cache {out.get('expert_cache_mib')} MiB", flush=True)
         except (ValueError, EngineDied) as e:
             print(f"[strata] the VRAM mode restore ({want} MiB) was not applied: {e}", flush=True)
+            raise
 
     vram_wait_s = 300.0                                  # #533: how long POST /v1/vram waits for a running request
 
@@ -3581,13 +3642,15 @@ class Service:
         if ctl is not None and not ctl.acquire(timeout=self.vram_wait_s):
             self.fifo.release()
             raise ModelBusy("a request is still running; try again when it has finished")
-        mode_before = self._vram_mode_reserve()      # the mode to come back to (captured before the overwrite)
+        mode_before = self.vram_auto_restore if self.vram_auto_restore is not None else self._vram_mode_reserve()
         try:
             if not self.loaded():
                 self.vram_reserve, self.vram_reserve_asked = reserve_mib, True
                 self.vram_auto_restore = None
                 return {"status": "not loaded", "reserve_mib": reserve_mib,
                         "note": "applied when the model loads"}
+            if getattr(self.engine, "parked", False):
+                self.engine.device_command("WAKE", reserve_mib)
             # an elastic encoder that runs keeps its VRAM on top of the asked reserve
             out = self.engine.vram((reserve_mib or 0) + self.vision.elastic_mib if self.vision_held else reserve_mib)
             self.vram_reserve, self.vram_reserve_asked = reserve_mib, True
@@ -3613,7 +3676,7 @@ class Service:
         """POST /load and every generation request: start the engine now if it is unloaded (raises GpuBusy)."""
         # a request is on its way: the idle thread must not unload between this and the request's own start
         self.last_request_at = time.time()
-        if self.loaded() and not self._vision_down():
+        if self.loaded() and not self._vision_down() and not getattr(self.engine, "parked", False) and self.vram_auto_restore is None:
             return
         trace = getattr(self.request_trace, "record", None)
         waiting = time.perf_counter()
@@ -3694,6 +3757,22 @@ class Service:
                     return "busy"
             if idle_for is not None and time.time() - (self.last_request_at or self.started_at) < idle_for:
                 return "busy"
+            if not full and getattr(self.engine, "device_park_enabled", False):
+                if getattr(self.engine, "parked", False):
+                    return "unloaded"
+                ctl = getattr(self.engine, "ctl", None) if getattr(self.engine, "batch", 0) else None
+                if ctl is not None:
+                    ctl.acquire()
+                try:
+                    out = self.engine.device_command("PARK")
+                finally:
+                    if ctl is not None:
+                        ctl.release()
+                print(f"[strata] device parked in {out.get('ms')} ms; {out.get('host_bytes', 0) >> 20} MiB locked RAM, "
+                      "same engine process, no disk", flush=True)
+                return "unloaded"
+            if getattr(self.engine, "parked", False):
+                self.engine.device_command("WAKE", 2147483647)  # session serialization needs live device pages
             if self.unload_session_memory:
                 self._session_to_memory()
             self.engine.unload()
@@ -3896,7 +3975,7 @@ class Service:
             state = "reading"
         elif s.get("busy"):
             state = "generating"
-        elif not self.loaded():
+        elif not self.loaded() or getattr(self.engine, "parked", False):
             state = "unloaded"
         else:
             state = "idle"
@@ -3928,6 +4007,11 @@ class Service:
         engine = {"model": self.model, "max_context": self.reported_ctx(), "images": self.vision is not None,
                   **dict(getattr(self.engine, "info", {}) or {})}
         keeper = getattr(self.engine, "memory_keeper", None)
+        engine["parked"] = bool(getattr(self.engine, "parked", False))
+        engine["process_id"] = getattr(getattr(self.engine, "proc", None), "pid", None)
+        engine["vram"] = {**(engine.get("vram") or {}), "auto_restore": self.vram_auto_restore}
+        if engine["parked"]:
+            engine["vram"]["reserve_mib"] = self._vram_mode_reserve()
         if keeper is not None:
             engine["retained_ram"] = keeper.stats()
         tel = self.telemetry.snapshot() if getattr(self, "telemetry", None) else {"now": {}, "history": {}, "static": {}}
@@ -3985,7 +4069,8 @@ class Service:
         images = self.vision is not None
         return {
             "service": "strata", "model": self.model,
-            "loaded": self.loaded(), "auto_load": hasattr(self.engine, "restart"),
+            "loaded": self.loaded() and not getattr(self.engine, "parked", False),
+            "parked": bool(getattr(self.engine, "parked", False)), "auto_load": hasattr(self.engine, "restart"),
             "structured_output": {"formats": ["json_object", "json_schema"], "method": "prompt_and_validate",
                                   "constrained_decoding": False, "stream_buffered": True},
             "engine": (getattr(self.engine, "info", {}) or {}).get("version"),
@@ -4453,7 +4538,8 @@ class Service:
                     try:
                         if not par:
                             self.ensure_loaded()
-                        elif not (self.loaded() and not self._vision_down()):
+                        elif not (self.loaded() and not self._vision_down() and not getattr(self.engine, "parked", False)
+                                  and self.vram_auto_restore is None):
                             with self.fifo:
                                 self.ensure_loaded()
                     except BaseException:
@@ -5720,7 +5806,7 @@ def make_handler(svc: Service):
                     self._json(503, {"error": {"type": "server_error", "message": str(e)}})
                     return
                 self._json(409 if r == "busy" else 200,
-                           {"status": r, **({"session_kept": svc.session_memory is not None} if r == "unloaded" else {})})
+                           {"status": r, **({"session_kept": svc.session_memory is not None or bool(getattr(svc.engine, "parked", False))} if r == "unloaded" else {})})
                 return
             if path == "/load":                              # load now, e.g. ahead of a request
                 try:
@@ -7276,4 +7362,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if os.name == "nt":
+        from serve.windows_process import bind_console_process_tree
+        bind_console_process_tree()
     sys.exit(main())

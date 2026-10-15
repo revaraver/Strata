@@ -1,5 +1,6 @@
 // src/core/mtp.cpp - see include/strata/core/mtp.hpp.
 #include "strata/core/mtp.hpp"
+#include "strata/core/device_park.hpp"
 #include "strata/platform/windows_shared_memory.hpp"
 #include "strata/core/coupled_draft.hpp"
 #include "strata/core/spec_prob.hpp"
@@ -142,16 +143,16 @@ MtpDrafter::~MtpDrafter() {
     if (cs_) cudaStreamSynchronize(cs_);
     for (auto& e : prefill_exec_) if (e) cudaGraphExecDestroy(e);
     for (auto& e : prefill_dev_exec_) if (e) cudaGraphExecDestroy(e);
-    if (pf_dev_) cudaFree(pf_dev_);
-    if (dense4_) cudaFree(dense4_);
+    if (pf_dev_) strata::core::park::deallocate(pf_dev_);
+    if (dense4_) strata::core::park::deallocate(dense4_);
     for (auto& e : round_exec_) if (e) cudaGraphExecDestroy(e);
     for (auto& e : step_exec_) if (e) cudaGraphExecDestroy(e);
     for (auto& e : round_exec_c_) if (e) cudaGraphExecDestroy(e);
     for (auto& e : step_exec_c_) if (e) cudaGraphExecDestroy(e);
-    if (cparams_) cudaFree(cparams_);
-    if (cring_) cudaFree(cring_);
-    if (dinv_) cudaFree(dinv_);
-    if (cscratch_) cudaFree(cscratch_);
+    if (cparams_) strata::core::park::deallocate(cparams_);
+    if (cring_) strata::core::park::deallocate(cring_);
+    if (dinv_) strata::core::park::deallocate(dinv_);
+    if (cscratch_) strata::core::park::deallocate(cscratch_);
     if (h_cparams_) cudaFreeHost(h_cparams_);
     if (h_chist_) cudaFreeHost(h_chist_);
     if (h_q_) cudaFreeHost(h_q_);
@@ -159,13 +160,13 @@ MtpDrafter::~MtpDrafter() {
     if (side_) cudaStreamDestroy(side_);
     if (sh_fork_) cudaEventDestroy(sh_fork_);
     if (sh_join_) cudaEventDestroy(sh_join_);
-    if (owns_weights_ && dense_) cudaFree(dense_);
-    if (owns_weights_ && experts_) cudaFree(experts_);
-    if (state_arena_) cudaFree(state_arena_);
-    if (arena_) cudaFree(arena_);
-    if (head_logits_) cudaFree(head_logits_);
-    if (owns_draft_head_ && dhead_) { strata::kernels::native_q6_k_unpack(dhead_); cudaFree(dhead_); }
-    if (owns_draft_head_ && dvocab_) cudaFree(dvocab_);
+    if (owns_weights_ && dense_) strata::core::park::deallocate(dense_);
+    if (owns_weights_ && experts_) strata::core::park::deallocate(experts_);
+    if (state_arena_) strata::core::park::deallocate(state_arena_);
+    if (arena_) strata::core::park::deallocate(arena_);
+    if (head_logits_) strata::core::park::deallocate(head_logits_);
+    if (owns_draft_head_ && dhead_) { strata::kernels::native_q6_k_unpack(dhead_); strata::core::park::deallocate(dhead_); }
+    if (owns_draft_head_ && dvocab_) strata::core::park::deallocate(dvocab_);
     if (ev_chain_) cudaEventDestroy(ev_chain_);
     for (cudaEvent_t e : ev_step_) if (e) cudaEventDestroy(e);
     void* hosts[] = {h_tok_, h_step_, h_pos_, h_row_, h_out_, h_prob_, h_force_};
@@ -215,7 +216,7 @@ bool MtpDrafter::make_q4_dense(const std::vector<uint8_t>& blob, std::string& er
         }
         q4_off_.push_back({t->name, off});
     }
-    if (cudaMalloc((void**) &dense4_, (size_t) total) != cudaSuccess) { err = "mtp: the Q4_0 projections do not fit"; return false; }
+    if (strata::core::park::allocate((void**) &dense4_, (size_t) total) != cudaSuccess) { err = "mtp: the Q4_0 projections do not fit"; return false; }
     cudaMemcpy(dense4_, host.data(), (size_t) total, cudaMemcpyHostToDevice);
     vram_ += total;
     std::fprintf(stderr, "strata mtp: --mtp-q4: %zu projections as Q4_0 (%.1f MiB)\n", plan.size(), (double) total / 1048576.0);
@@ -299,7 +300,7 @@ bool MtpDrafter::load(const std::string& rt_dir, const ModelGeometry& g, Session
         }
         std::vector<uint8_t> blob;
         if (!read_file(rt_dir + "/dense.bin", blob)) { err = "mtp: cannot read dense.bin"; return false; }
-        const cudaError_t alloc = cudaMalloc((void**) &dense_, blob.size());
+        const cudaError_t alloc = strata::core::park::allocate((void**) &dense_, blob.size());
         if (alloc != cudaSuccess) {
             size_t free_bytes = 0, total_bytes = 0;
             const cudaError_t info = cudaMemGetInfo(&free_bytes, &total_bytes);
@@ -323,7 +324,7 @@ bool MtpDrafter::load(const std::string& rt_dir, const ModelGeometry& g, Session
             FILE* f;
             ~Closer() { if (f != nullptr) std::fclose(f); }
         } closer{f};
-        if (cudaMalloc((void**) &experts_, bytes) != cudaSuccess) { err = "mtp: the 512 experts do not fit in VRAM"; return false; }
+        if (strata::core::park::allocate((void**) &experts_, bytes) != cudaSuccess) { err = "mtp: the 512 experts do not fit in VRAM"; return false; }
 #if !defined(_WIN32)
         strata::platform::advise_willneed(fileno(f), 0, bytes);
 #endif
@@ -355,16 +356,16 @@ bool MtpDrafter::load(const std::string& rt_dir, const ModelGeometry& g, Session
     qsa_set_kv_hybrid(false);
     if (kv_hybrid_was) qsa_set_kv_int8(true);   // the drafter under --kv k8v4: plain INT8
     uint64_t sb = qsa_state_bytes(g, max_cells, false, ring);
-    if (cudaMalloc(&state_arena_, sb) != cudaSuccess) { err = "mtp: the K/V state does not fit"; return false; }
+    if (strata::core::park::allocate(&state_arena_, sb) != cudaSuccess) { err = "mtp: the K/V state does not fit"; return false; }
     if (qsa_state_init(g, max_cells, state_arena_, st_, &ss.qsa_states[ss.qsa_primary()], ring) == 0) {
         if (st_.kv_mode == 0) { err = "mtp: state init failed"; return false; }
         std::fprintf(stderr, "strata mtp: no pinned RAM left for the draft layer's K/V copy; keeping it in VRAM\n");
         cudaGetLastError();
-        cudaFree(state_arena_);
+        strata::core::park::deallocate(state_arena_);
         st_ = QsaState{};
         ring = -1;   // fully resident
         sb = qsa_state_bytes(g, max_cells, false, ring);
-        if (cudaMalloc(&state_arena_, sb) != cudaSuccess) { err = "mtp: the K/V state does not fit"; return false; }
+        if (strata::core::park::allocate(&state_arena_, sb) != cudaSuccess) { err = "mtp: the K/V state does not fit"; return false; }
         if (qsa_state_init(g, max_cells, state_arena_, st_, &ss.qsa_states[ss.qsa_primary()], ring) == 0) { err = "mtp: state init failed"; return false; }
     }
     qsa_set_kv_int8(kv_int8_was);
@@ -426,7 +427,7 @@ bool MtpDrafter::load(const std::string& rt_dir, const ModelGeometry& g, Session
     };
     Bump count;
     carve(count);
-    if (cudaMalloc(&arena_, count.used) != cudaSuccess) { err = "mtp: buffers do not fit"; return false; }
+    if (strata::core::park::allocate(&arena_, count.used) != cudaSuccess) { err = "mtp: buffers do not fit"; return false; }
     cudaMemset(arena_, 0, count.used);
     Bump real;
     real.base = (uint8_t*) arena_;
@@ -569,8 +570,8 @@ bool MtpDrafter::setup_coupled(std::string& err) {
         return true;
     }
     const size_t ring = (size_t) (kCoupledHistCap + max_t_) * sizeof(int32_t);
-    if (cudaMalloc((void**) &cparams_, sizeof(strata::kernels::SamplerParams)) != cudaSuccess ||
-        cudaMalloc((void**) &cring_, ring) != cudaSuccess || cudaMalloc(&cscratch_, scratch) != cudaSuccess ||
+    if (strata::core::park::allocate((void**) &cparams_, sizeof(strata::kernels::SamplerParams)) != cudaSuccess ||
+        strata::core::park::allocate((void**) &cring_, ring) != cudaSuccess || strata::core::park::allocate(&cscratch_, scratch) != cudaSuccess ||
         !mapped(sizeof(strata::kernels::SamplerParams), (void**) &h_cparams_, (void**) &m_cparams_) ||
         !mapped((size_t) kCoupledHistCap * sizeof(int32_t), (void**) &h_chist_, (void**) &m_chist_)) {
         err = "mtp: the coupled draft sampler's buffers do not fit";
@@ -589,7 +590,7 @@ bool MtpDrafter::setup_coupled(std::string& err) {
         cudaMemcpy(sub.data(), dvocab_, sub.size() * sizeof(int32_t), cudaMemcpyDeviceToHost);
         for (size_t i = 0; i < sub.size(); ++i)
             if (sub[i] >= 0 && sub[i] < n_vocab_ && inv[(size_t) sub[i]] < 0) inv[(size_t) sub[i]] = (int32_t) i;
-        if (cudaMalloc((void**) &dinv_, inv.size() * sizeof(int32_t)) != cudaSuccess) {
+        if (strata::core::park::allocate((void**) &dinv_, inv.size() * sizeof(int32_t)) != cudaSuccess) {
             err = "mtp: the coupled draft sampler's token map does not fit";
             return false;
         }
@@ -678,7 +679,7 @@ bool MtpDrafter::bind(const WeightTable& wt, const NativeHead* head, const float
     n_vocab_ = wo->ne1;
     if (head == nullptr || !head->loaded()) { err = "mtp: the draft layer needs the native head (--native)"; return false; }
     if (head_logits_ == nullptr &&
-        cudaMalloc((void**) &head_logits_, (size_t) max_t_ * (size_t) n_vocab_ * sizeof(float)) != cudaSuccess) {
+        strata::core::park::allocate((void**) &head_logits_, (size_t) max_t_ * (size_t) n_vocab_ * sizeof(float)) != cudaSuccess) {
         err = "mtp: the draft logits do not fit";
         return false;
     }
@@ -700,8 +701,8 @@ bool MtpDrafter::bind(const WeightTable& wt, const NativeHead* head, const float
         if (read_file(vocab_file(), raw) && raw.size() >= 4 && raw.size() % 4 == 0) {
             n_dvocab_ = (int64_t) (raw.size() / 4);
             const int64_t row_bytes = (int64_t) head->row_bytes();   // a vocabulary row of the native head
-            if (cudaMalloc((void**) &dvocab_, raw.size()) != cudaSuccess ||
-                cudaMalloc((void**) &dhead_, (size_t) (n_dvocab_ * row_bytes)) != cudaSuccess) {
+            if (strata::core::park::allocate((void**) &dvocab_, raw.size()) != cudaSuccess ||
+                strata::core::park::allocate((void**) &dhead_, (size_t) (n_dvocab_ * row_bytes)) != cudaSuccess) {
                 err = "mtp: the draft head does not fit";
                 draft_head_hint(n_dvocab_, row_bytes);
                 return false;
@@ -718,8 +719,8 @@ bool MtpDrafter::bind(const WeightTable& wt, const NativeHead* head, const float
                 bool ok_x = true;
                 {
                     const OnDevice on_head(head_dev);
-                    ok_x = cudaMalloc((void**) &tmp, (size_t) (n_dvocab_ * row_bytes)) == cudaSuccess &&
-                           cudaMalloc((void**) &dv, raw.size()) == cudaSuccess &&
+                    ok_x = strata::core::park::allocate((void**) &tmp, (size_t) (n_dvocab_ * row_bytes)) == cudaSuccess &&
+                           strata::core::park::allocate((void**) &dv, raw.size()) == cudaSuccess &&
                            cudaMemcpy(dv, raw.data(), raw.size(), cudaMemcpyHostToDevice) == cudaSuccess;
                     if (ok_x) {
                         strata::kernels::gather_rows((const uint8_t*) head->weights(), row_bytes, dv, n_dvocab_,
@@ -730,8 +731,8 @@ bool MtpDrafter::bind(const WeightTable& wt, const NativeHead* head, const float
                 ok_x = ok_x && cudaMemcpy(dhead_, tmp, (size_t) (n_dvocab_ * row_bytes), cudaMemcpyDeviceToDevice) == cudaSuccess;
                 {
                     const OnDevice on_head(head_dev);
-                    if (tmp) cudaFree(tmp);
-                    if (dv) cudaFree(dv);
+                    if (tmp) strata::core::park::deallocate(tmp);
+                    if (dv) strata::core::park::deallocate(dv);
                 }
                 if (!ok_x) { err = "mtp: the draft head's rows could not be copied from the head's card"; return false; }
             } else {
@@ -775,7 +776,7 @@ struct MtpProf {
     }
     void init() {
         if (!on || d != nullptr) return;
-        if (cudaMalloc((void**) &d, (size_t) kMpSlots * kMpGraphs * 8) != cudaSuccess) { on = false; d = nullptr; (void) cudaGetLastError(); return; }
+        if (strata::core::park::allocate((void**) &d, (size_t) kMpSlots * kMpGraphs * 8) != cudaSuccess) { on = false; d = nullptr; (void) cudaGetLastError(); return; }
         cudaMemset(d, 0, (size_t) kMpSlots * kMpGraphs * 8);
         h.assign((size_t) kMpSlots * kMpGraphs, 0);
     }
@@ -1361,10 +1362,10 @@ bool MtpDrafter::prepare_prefill(std::string& err) {
     const OnDevice on_device(device_);
     const int64_t per_row = 1 + 4 + g_->n_head;
     if (pf_cap_ < (int64_t) max_t_ * per_row) {
-        if (pf_dev_) cudaFree(pf_dev_);
+        if (pf_dev_) strata::core::park::deallocate(pf_dev_);
         pf_dev_ = nullptr;
         pf_cap_ = 0;
-        if (cudaMalloc((void**) &pf_dev_, (size_t) (max_t_ * per_row) * sizeof(int32_t)) != cudaSuccess) {
+        if (strata::core::park::allocate((void**) &pf_dev_, (size_t) (max_t_ * per_row) * sizeof(int32_t)) != cudaSuccess) {
             err = "mtp prefill: the input records do not fit";
             return false;
         }
@@ -1407,10 +1408,10 @@ bool MtpDrafter::prefill(const float* R_rows, const int32_t* next_tokens, int64_
     const int64_t NHp = g_->n_head, per_row = 1 + 4 + NHp;
     if (!per_group_sync && n > 0) {
         if (pf_cap_ < n * per_row) {
-            if (pf_dev_) cudaFree(pf_dev_);
+            if (pf_dev_) strata::core::park::deallocate(pf_dev_);
             pf_dev_ = nullptr;
             pf_cap_ = 0;
-            if (cudaMalloc((void**) &pf_dev_, (size_t) (n * per_row) * sizeof(int32_t)) != cudaSuccess) {
+            if (strata::core::park::allocate((void**) &pf_dev_, (size_t) (n * per_row) * sizeof(int32_t)) != cudaSuccess) {
                 err = "mtp prefill: the input records do not fit";
                 return false;
             }

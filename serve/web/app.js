@@ -233,7 +233,7 @@ function renderConvCache(c) {
 }
 
 // ------------------------------------------------------------------ 显存模式浮窗（#533 的界面）
-const VF = {fast: store.get("vram_fast_mib", 4096), mid: store.get("vram_mid_mib", 32768), zero: store.get("vram_zero_mib", 45056), last: null, restore: null, busy: false};
+const VF = {fast: store.get("vram_fast_mib", 4096), mid: store.get("vram_mid_mib", 32768), zero: store.get("vram_zero_mib", 45056), busy: false};
 $("vf-fast-mib").value = VF.fast;
 $("vf-mid-mib").value = VF.mid;
 $("vf-fast-mib").onchange = () => { VF.fast = Math.max(0, parseInt($("vf-fast-mib").value || "0", 10));
@@ -262,9 +262,6 @@ async function vfPost(path, body) {
 $("vf-fast").onclick = () => vfPost("v1/vram", {reserve_mib: VF.fast});
 $("vf-mid").onclick = () => vfPost("v1/vram", {reserve_mib: VF.mid});
 $("vf-zero").onclick = () => vfPost("v1/vram", {reserve_mib: VF.zero});
-$("vf-zero-offload").onclick = () => {   // 记住当前档位（高速/中速/自定义），下一条请求恢复它；没记住就回高速
-  VF.restore = VF.last != null && VF.last !== VF.zero ? VF.last : VF.fast;
-  vfPost("v1/vram", {reserve_mib: VF.zero, auto_restore: VF.restore}); };
 $("vf-unload").onclick = () => vfPost("unload");
 $("vf-full").onclick = () => vfPost("unload?full=1");
 function renderVramCard(m) {
@@ -274,30 +271,32 @@ function renderVramCard(m) {
   const live = m.live || {}, eng = m.engine || {}, v = eng.vram || {};
   const unloaded = live.state === "unloaded";
   const r = v.reserve_mib;
-  if (r != null && r !== VF.zero) VF.last = r;   // 零速卸载要知道"之前的档位"是什么
   let mode = "默认", on = "";
-  if (unloaded) mode = eng.retained_ram?.weights_bytes > 0 ? "已卸载到内存" : "完全卸载";
+  if (unloaded) { mode = eng.parked ? "已卸载（下次对话恢复）" : "完全卸载"; on = eng.parked ? "vf-unload" : "vf-full"; }
   else if (r != null && r === VF.fast) { mode = "高速"; on = "vf-fast"; }
   else if (r != null && r === VF.mid) { mode = "中速"; on = "vf-mid"; }
-  else if (r != null && r === VF.zero) { mode = v.auto_restore != null ? "已卸载（下一条对话自动恢复）" : "零速"; on = v.auto_restore != null ? "vf-zero-offload" : "vf-zero"; }
+  else if (r != null && r === VF.zero) { mode = "零速"; on = "vf-zero"; }
   else if (r != null) mode = `自定义 ${r} MiB`;
   $("vf-mode").textContent = mode;
   $("vf-fast").dataset.on = on === "vf-fast" ? "1" : "0";
   $("vf-mid").dataset.on = on === "vf-mid" ? "1" : "0";
   $("vf-zero").dataset.on = on === "vf-zero" ? "1" : "0";
-  $("vf-zero-offload").dataset.on = on === "vf-zero-offload" ? "1" : "0";
+  $("vf-unload").dataset.on = on === "vf-unload" ? "1" : "0";
+  $("vf-full").dataset.on = on === "vf-full" ? "1" : "0";
   const gbOf = (mib) => mib != null ? `${fmt(mib / 1024, 1)} GB` : null;
   facts($("vf-facts"), [
-    ["空闲显存", gbOf(v.vram_free_mib ?? eng.vram_free_mib)],
+    ["空闲显存", gbOf(m.hardware?.gpu_mem_total != null && m.hardware?.gpu_mem_used != null
+      ? (m.hardware.gpu_mem_total - m.hardware.gpu_mem_used) / 2 ** 20 : v.vram_free_mib ?? eng.vram_free_mib)],
     ["专家缓存", v.expert_cache_mib != null ? `${gbOf(v.expert_cache_mib)} / ${gbOf(v.expert_cache_full_mib)}` : null],
     ["当前预留", r != null ? `${fmt(r)} MiB` : null],
     ["内存权重", eng.retained_ram ? `${fmt(eng.retained_ram.weights_bytes / 2 ** 30, 1)} GiB` : null],
+    ["显存快照", eng.device_park?.host_bytes ? `${fmt(eng.device_park.host_bytes / 2 ** 30, 1)} GiB` : null],
     ["已存对话", eng.retained_ram?.session_bytes ? `${fmt(eng.retained_ram.session_bytes / 2 ** 20)} MiB` : null],
   ]);
   const elastic = v.elastic || eng.vram_elastic;
   $("vf-note").textContent = !elastic
     ? "热切换需要引擎以 vram_elastic 启动（改 run config 后重启一次）；未开启时只有卸载可用。"
-    : (eng.retained_ram?.error || "卸载：权重和对话保留在内存；完全卸载：释放权重，保留对话。下次请求自动加载。");
+    : (eng.retained_ram?.error || "零速：保持低显存推理。卸载：释放显存、保留进程与对话，下一条恢复原档位。完全卸载：退出引擎、释放权重，保留对话。");
 }
 
 function renderTotals(t) {

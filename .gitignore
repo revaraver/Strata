@@ -79,3 +79,7 @@ build-vision-cuda12.bat
 
 /.ccache/
 /.rocm-win/
+
+# Local RAM-resume acceptance outputs; curated records are under bench/results/.
+/device-park-*.json
+/strata-iq3_s.json.before-device-park

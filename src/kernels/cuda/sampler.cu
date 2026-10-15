@@ -20,6 +20,7 @@
 //   - `sampler_kernel` (`STRATA_OLD_SAMPLER=1`), the kernel of engine 0.1.20, kept as the reference.
 // The two new ones share `sampled_tail_warp` (top_p / min_p / temperature / draw on one warp).
 #include "strata/kernels/sampler.hpp"
+#include "strata/core/device_park.hpp"
 #include "strata/core/coupled_draft.hpp"
 #include "strata/core/spec_prob.hpp"
 #include "strata/core/emulate.hpp"
@@ -1170,10 +1171,10 @@ int2* split_scratch(void* stream, size_t entries) {
     size_t want = 2 * slot->entries < kCap ? 2 * slot->entries : kCap;
     if (want < entries) want = entries;
     int2* ptr = nullptr;
-    if (cudaMalloc(&ptr, want * sizeof(int2)) != cudaSuccess) {
+    if (strata::core::park::allocate(&ptr, want * sizeof(int2)) != cudaSuccess) {
         (void) cudaGetLastError();
         want = entries;
-        if (cudaMalloc(&ptr, want * sizeof(int2)) != cudaSuccess) {
+        if (strata::core::park::allocate(&ptr, want * sizeof(int2)) != cudaSuccess) {
             (void) cudaGetLastError();
             slot->failed = entries;
             return nullptr;

@@ -41,6 +41,7 @@
 //    BIT-EXACT assertion plus a full-precision probe of the intermediate found it.  That is the strongest
 //    argument in this file for keeping both.
 #include "strata/core/emulate.hpp"
+#include "strata/core/device_park.hpp"
 #include "strata/kernels/qsa.hpp"
 
 #include "strata/kernels/f16_bits.hpp"
@@ -539,7 +540,7 @@ namespace {
 int32_t* step_scratch() {
     static int32_t* d_step = nullptr;
     if (d_step == nullptr) {
-        if (cudaMalloc(&d_step, qsa_step_bytes()) != cudaSuccess) {
+        if (strata::core::park::allocate(&d_step, qsa_step_bytes()) != cudaSuccess) {
             std::fprintf(stderr, "qsa: step upload: cudaMalloc failed\n");
             std::exit(1);
         }

@@ -1,5 +1,6 @@
 // src/kernels/cuda/fused_gr.cu - see include/strata/kernels/fused_gr.hpp.
 #include "strata/core/emulate.hpp"
+#include "strata/core/device_park.hpp"
 #include "strata/kernels/q8_1_finite.hpp"   // #606: q8_1_ds
 #include "strata/core/geometry.hpp"
 #include "strata/kernels/fused_gr.hpp"
@@ -2171,7 +2172,7 @@ bool fused_gr_selftest(bool ok_variant[4], std::string why[4]) {
     const size_t bytes = h_down.size() * 2 + h_up.size() * 2 + h_inj.size() * 2 +
                          (h_norm.size() + h_R.size() + h_bo.size() + h_ip.size() + NV * n_set) * 4 + 32 * 256;
     uint8_t* base = nullptr;
-    if (cudaMalloc((void**) &base, bytes) != cudaSuccess) {
+    if (strata::core::park::allocate((void**) &base, bytes) != cudaSuccess) {
         cudaGetLastError();
         why[0] = "no room for the check (" + std::to_string(bytes >> 20) + " MiB)";
         return false;
@@ -2277,7 +2278,7 @@ bool fused_gr_selftest(bool ok_variant[4], std::string why[4]) {
         cudaStreamSynchronize(st);
         cudaStreamDestroy(st);
     }
-    cudaFree(base);
+    strata::core::park::deallocate(base);
     cudaGetLastError();
     if (!ok) ok_variant[2] = ok_variant[3] = false;
     return ok;

@@ -1,0 +1,879 @@
+[
+  {
+    "phase": "long-seed",
+    "elapsed_s": 61.3431,
+    "result": {
+      "usage": {
+        "prompt_tokens": 232093,
+        "completion_tokens": 12,
+        "total_tokens": 232105,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "reasoning_content": "我们需要回答用户的请求。 User Chinese: \"这是一"
+      }
+    },
+    "before": {
+      "gpu": {
+        "used": 46458449920,
+        "free": 5068574720,
+        "total": 51527024640
+      },
+      "pid": 80244,
+      "physical_used": 123154612224,
+      "engine_private": 56899768320,
+      "process_io": {
+        "read_count": 9876,
+        "write_count": 103128,
+        "read_bytes": 84693799145,
+        "write_bytes": 124773,
+        "other_count": 11640,
+        "other_bytes": 476540
+      },
+      "state": "idle",
+      "parked": false,
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "device": {
+        "parked": 0,
+        "host_bytes": 0,
+        "vram_free_mib": 33535,
+        "ms": 2029.9
+      },
+      "vram": {
+        "reserve_mib": 4096,
+        "expert_slots": 15276,
+        "expert_slots_full": 16584,
+        "expert_cache_mib": 29696,
+        "expert_cache_full_mib": 32228,
+        "vram_free_mib": 5773,
+        "prompt_chunk": 32768,
+        "auto_restore": null
+      },
+      "hardware": {
+        "gpu_util": 100,
+        "gpu_mem_used": 46491873280,
+        "gpu_mem_total": 51527024640,
+        "gpu_temp": 42,
+        "gpu_power": 105.547,
+        "gpu_power_limit": 450.0,
+        "gpu_pcie_gen": 4,
+        "gpu_pcie_gen_max": 4,
+        "gpu_pcie_width": 16,
+        "gpu_pcie_rx_mb": 26516.2939453125,
+        "gpu_pcie_tx_mb": 3038.8349609375,
+        "cpu": 7.0,
+        "ram_used": 123156234240,
+        "ram_total": 206025834496,
+        "disk_read_mb": 0.003667857421892927,
+        "disk_write_mb": 0.0,
+        "tok_s": 0.0,
+        "tok_s_mean": 0,
+        "prefill_tok_s_mean": 0.0
+      },
+      "disk": {
+        "PhysicalDrive0": {
+          "read": 15975538176,
+          "write": 4905877504
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 184068214272,
+          "write": 365484015616
+        },
+        "PhysicalDrive3": {
+          "read": 2026630337536,
+          "write": 80930533376
+        },
+        "PhysicalDrive4": {
+          "read": 648299520,
+          "write": 336360448
+        }
+      }
+    },
+    "after": {
+      "gpu": {
+        "used": 46437740544,
+        "free": 5089284096,
+        "total": 51527024640
+      },
+      "pid": 80244,
+      "physical_used": 123454029824,
+      "engine_private": 57505013760,
+      "process_io": {
+        "read_count": 10232,
+        "write_count": 103568,
+        "read_bytes": 84695249607,
+        "write_bytes": 125887,
+        "other_count": 11650,
+        "other_bytes": 476540
+      },
+      "state": "idle",
+      "parked": false,
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "device": {
+        "parked": 0,
+        "host_bytes": 0,
+        "vram_free_mib": 33535,
+        "ms": 2029.9
+      },
+      "vram": {
+        "reserve_mib": 4096,
+        "expert_slots": 15276,
+        "expert_slots_full": 16584,
+        "expert_cache_mib": 29696,
+        "expert_cache_full_mib": 32228,
+        "vram_free_mib": 5773,
+        "prompt_chunk": 32768,
+        "auto_restore": null
+      },
+      "hardware": {
+        "gpu_util": 100,
+        "gpu_mem_used": 46437740544,
+        "gpu_mem_total": 51527024640,
+        "gpu_temp": 56,
+        "gpu_power": 202.711,
+        "gpu_power_limit": 450.0,
+        "gpu_pcie_gen": 4,
+        "gpu_pcie_gen_max": 4,
+        "gpu_pcie_width": 16,
+        "gpu_pcie_rx_mb": 1901.3876953125,
+        "gpu_pcie_tx_mb": 350.904296875,
+        "cpu": 11.5,
+        "ram_used": 123469033472,
+        "ram_total": 206025834496,
+        "disk_read_mb": 0.6250848604854345,
+        "disk_write_mb": 0.7133321349069076,
+        "tok_s": 0.0,
+        "tok_s_mean": 0,
+        "prefill_tok_s_mean": 3853.0
+      },
+      "disk": {
+        "PhysicalDrive0": {
+          "read": 15975538176,
+          "write": 4905877504
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 184077826048,
+          "write": 365524654592
+        },
+        "PhysicalDrive3": {
+          "read": 2026633081856,
+          "write": 80932208640
+        },
+        "PhysicalDrive4": {
+          "read": 648299520,
+          "write": 336360448
+        }
+      }
+    },
+    "peak_physical_used": 123539460096,
+    "process_io_delta": {
+      "read_count": 356,
+      "write_count": 440,
+      "read_bytes": 1450462,
+      "write_bytes": 1114,
+      "other_count": 10,
+      "other_bytes": 0
+    },
+    "disk_delta": {
+      "PhysicalDrive0": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive1": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive2": {
+        "read": 9611776,
+        "write": 40638976
+      },
+      "PhysicalDrive3": {
+        "read": 2744320,
+        "write": 1675264
+      },
+      "PhysicalDrive4": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  },
+  {
+    "phase": "long-park",
+    "elapsed_s": 4.1567,
+    "result": {
+      "status": "unloaded",
+      "session_kept": true,
+      "api_s": 4.1566,
+      "release_settled_s": 4.1567,
+      "gpu": {
+        "used": 6216265728,
+        "free": 45310758912,
+        "total": 51527024640
+      }
+    },
+    "before": {
+      "gpu": {
+        "used": 46437740544,
+        "free": 5089284096,
+        "total": 51527024640
+      },
+      "pid": 80244,
+      "physical_used": 123453083648,
+      "engine_private": 57505013760,
+      "process_io": {
+        "read_count": 10232,
+        "write_count": 103568,
+        "read_bytes": 84695249607,
+        "write_bytes": 125887,
+        "other_count": 11650,
+        "other_bytes": 476540
+      },
+      "state": "idle",
+      "parked": false,
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "device": {
+        "parked": 0,
+        "host_bytes": 0,
+        "vram_free_mib": 33535,
+        "ms": 2029.9
+      },
+      "vram": {
+        "reserve_mib": 4096,
+        "expert_slots": 15276,
+        "expert_slots_full": 16584,
+        "expert_cache_mib": 29696,
+        "expert_cache_full_mib": 32228,
+        "vram_free_mib": 5773,
+        "prompt_chunk": 32768,
+        "auto_restore": null
+      },
+      "hardware": {
+        "gpu_util": 100,
+        "gpu_mem_used": 46437740544,
+        "gpu_mem_total": 51527024640,
+        "gpu_temp": 56,
+        "gpu_power": 202.711,
+        "gpu_power_limit": 450.0,
+        "gpu_pcie_gen": 4,
+        "gpu_pcie_gen_max": 4,
+        "gpu_pcie_width": 16,
+        "gpu_pcie_rx_mb": 1901.3876953125,
+        "gpu_pcie_tx_mb": 350.904296875,
+        "cpu": 11.5,
+        "ram_used": 123469033472,
+        "ram_total": 206025834496,
+        "disk_read_mb": 0.6250848604854345,
+        "disk_write_mb": 0.7133321349069076,
+        "tok_s": 0.0,
+        "tok_s_mean": 0,
+        "prefill_tok_s_mean": 3853.0
+      },
+      "disk": {
+        "PhysicalDrive0": {
+          "read": 15975538176,
+          "write": 4905877504
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 184077830144,
+          "write": 365524654592
+        },
+        "PhysicalDrive3": {
+          "read": 2026633081856,
+          "write": 80932208640
+        },
+        "PhysicalDrive4": {
+          "read": 648299520,
+          "write": 336360448
+        }
+      }
+    },
+    "after": {
+      "gpu": {
+        "used": 6216265728,
+        "free": 45310758912,
+        "total": 51527024640
+      },
+      "pid": 80244,
+      "physical_used": 132061597696,
+      "engine_private": 26237927424,
+      "process_io": {
+        "read_count": 10233,
+        "write_count": 103786,
+        "read_bytes": 84695249613,
+        "write_bytes": 126327,
+        "other_count": 11650,
+        "other_bytes": 476540
+      },
+      "state": "unloaded",
+      "parked": true,
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "device": {
+        "parked": 1,
+        "host_bytes": 8795181056,
+        "vram_free_mib": 33519,
+        "ms": 4154.1
+      },
+      "vram": {
+        "reserve_mib": 4096,
+        "expert_slots": 0,
+        "expert_slots_full": 16584,
+        "expert_cache_mib": 0,
+        "expert_cache_full_mib": 32228,
+        "vram_free_mib": 33519,
+        "prompt_chunk": 256,
+        "parked": true,
+        "auto_restore": null
+      },
+      "hardware": {
+        "gpu_util": 46,
+        "gpu_mem_used": 15292739584,
+        "gpu_mem_total": 51527024640,
+        "gpu_temp": 49,
+        "gpu_power": 56.011,
+        "gpu_power_limit": 450.0,
+        "gpu_pcie_gen": 4,
+        "gpu_pcie_gen_max": 4,
+        "gpu_pcie_width": 16,
+        "gpu_pcie_rx_mb": 17.4990234375,
+        "gpu_pcie_tx_mb": 9402.083984375,
+        "cpu": 6.6,
+        "ram_used": 132064391168,
+        "ram_total": 206025834496,
+        "disk_read_mb": 0.0,
+        "disk_write_mb": 0.09894529745456888,
+        "tok_s": 0.0,
+        "tok_s_mean": 0,
+        "prefill_tok_s_mean": 0.0
+      },
+      "disk": {
+        "PhysicalDrive0": {
+          "read": 15975538176,
+          "write": 4905877504
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 184077830144,
+          "write": 365525178880
+        },
+        "PhysicalDrive3": {
+          "read": 2026633081856,
+          "write": 80932274176
+        },
+        "PhysicalDrive4": {
+          "read": 648299520,
+          "write": 336360448
+        }
+      }
+    },
+    "peak_physical_used": 132069449728,
+    "process_io_delta": {
+      "read_count": 1,
+      "write_count": 218,
+      "read_bytes": 6,
+      "write_bytes": 440,
+      "other_count": 0,
+      "other_bytes": 0
+    },
+    "disk_delta": {
+      "PhysicalDrive0": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive1": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive2": {
+        "read": 0,
+        "write": 524288
+      },
+      "PhysicalDrive3": {
+        "read": 0,
+        "write": 65536
+      },
+      "PhysicalDrive4": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  },
+  {
+    "phase": "long-explicit-wake",
+    "elapsed_s": 3.8787,
+    "result": {
+      "status": "loaded"
+    },
+    "before": {
+      "gpu": {
+        "used": 6216265728,
+        "free": 45310758912,
+        "total": 51527024640
+      },
+      "pid": 80244,
+      "physical_used": 132059176960,
+      "engine_private": 26237927424,
+      "process_io": {
+        "read_count": 10233,
+        "write_count": 103786,
+        "read_bytes": 84695249613,
+        "write_bytes": 126327,
+        "other_count": 11650,
+        "other_bytes": 476540
+      },
+      "state": "unloaded",
+      "parked": true,
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "device": {
+        "parked": 1,
+        "host_bytes": 8795181056,
+        "vram_free_mib": 33519,
+        "ms": 4154.1
+      },
+      "vram": {
+        "reserve_mib": 4096,
+        "expert_slots": 0,
+        "expert_slots_full": 16584,
+        "expert_cache_mib": 0,
+        "expert_cache_full_mib": 32228,
+        "vram_free_mib": 33519,
+        "prompt_chunk": 256,
+        "parked": true,
+        "auto_restore": null
+      },
+      "hardware": {
+        "gpu_util": 46,
+        "gpu_mem_used": 15292739584,
+        "gpu_mem_total": 51527024640,
+        "gpu_temp": 49,
+        "gpu_power": 56.011,
+        "gpu_power_limit": 450.0,
+        "gpu_pcie_gen": 4,
+        "gpu_pcie_gen_max": 4,
+        "gpu_pcie_width": 16,
+        "gpu_pcie_rx_mb": 17.4990234375,
+        "gpu_pcie_tx_mb": 9402.083984375,
+        "cpu": 6.6,
+        "ram_used": 132064391168,
+        "ram_total": 206025834496,
+        "disk_read_mb": 0.0,
+        "disk_write_mb": 0.09894529745456888,
+        "tok_s": 0.0,
+        "tok_s_mean": 0,
+        "prefill_tok_s_mean": 0.0
+      },
+      "disk": {
+        "PhysicalDrive0": {
+          "read": 15975538176,
+          "write": 4905877504
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 184077830144,
+          "write": 365525178880
+        },
+        "PhysicalDrive3": {
+          "read": 2026633081856,
+          "write": 80932274176
+        },
+        "PhysicalDrive4": {
+          "read": 648299520,
+          "write": 336360448
+        }
+      }
+    },
+    "after": {
+      "gpu": {
+        "used": 45894381568,
+        "free": 5632643072,
+        "total": 51527024640
+      },
+      "pid": 80244,
+      "physical_used": 123312533504,
+      "engine_private": 56966500352,
+      "process_io": {
+        "read_count": 10234,
+        "write_count": 103997,
+        "read_bytes": 84695249624,
+        "write_bytes": 126694,
+        "other_count": 11650,
+        "other_bytes": 476540
+      },
+      "state": "idle",
+      "parked": false,
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "device": {
+        "parked": 0,
+        "host_bytes": 0,
+        "vram_free_mib": 6265,
+        "ms": 3867.6
+      },
+      "vram": {
+        "reserve_mib": 4096,
+        "expert_slots": 14991,
+        "expert_slots_full": 16584,
+        "expert_cache_mib": 29184,
+        "expert_cache_full_mib": 32228,
+        "vram_free_mib": 6265,
+        "prompt_chunk": 32768,
+        "parked": false,
+        "auto_restore": null
+      },
+      "hardware": {
+        "gpu_util": 100,
+        "gpu_mem_used": 45894381568,
+        "gpu_mem_total": 51527024640,
+        "gpu_temp": 51,
+        "gpu_power": 113.715,
+        "gpu_power_limit": 450.0,
+        "gpu_pcie_gen": 4,
+        "gpu_pcie_gen_max": 4,
+        "gpu_pcie_width": 16,
+        "gpu_pcie_rx_mb": 26636.7431640625,
+        "gpu_pcie_tx_mb": 3054.7138671875,
+        "cpu": 6.1,
+        "ram_used": 123309891584,
+        "ram_total": 206025834496,
+        "disk_read_mb": 0.0,
+        "disk_write_mb": 0.09531197384863398,
+        "tok_s": 0.0,
+        "tok_s_mean": 0,
+        "prefill_tok_s_mean": 0.0
+      },
+      "disk": {
+        "PhysicalDrive0": {
+          "read": 15975538176,
+          "write": 4905877504
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 184077834752,
+          "write": 365526830080
+        },
+        "PhysicalDrive3": {
+          "read": 2026633081856,
+          "write": 80932323328
+        },
+        "PhysicalDrive4": {
+          "read": 648299520,
+          "write": 336360448
+        }
+      }
+    },
+    "peak_physical_used": 132069113856,
+    "process_io_delta": {
+      "read_count": 1,
+      "write_count": 211,
+      "read_bytes": 11,
+      "write_bytes": 367,
+      "other_count": 0,
+      "other_bytes": 0
+    },
+    "disk_delta": {
+      "PhysicalDrive0": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive1": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive2": {
+        "read": 4608,
+        "write": 1651200
+      },
+      "PhysicalDrive3": {
+        "read": 0,
+        "write": 49152
+      },
+      "PhysicalDrive4": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  },
+  {
+    "phase": "long-reuse",
+    "elapsed_s": 4.0418,
+    "result": {
+      "usage": {
+        "prompt_tokens": 232093,
+        "completion_tokens": 12,
+        "total_tokens": 232105,
+        "prompt_tokens_details": {
+          "cached_tokens": 232062
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "reasoning_content": "用户要求记住编号 72931，并"
+      }
+    },
+    "before": {
+      "gpu": {
+        "used": 45894381568,
+        "free": 5632643072,
+        "total": 51527024640
+      },
+      "pid": 80244,
+      "physical_used": 123305496576,
+      "engine_private": 56966500352,
+      "process_io": {
+        "read_count": 10234,
+        "write_count": 103997,
+        "read_bytes": 84695249624,
+        "write_bytes": 126694,
+        "other_count": 11650,
+        "other_bytes": 476540
+      },
+      "state": "idle",
+      "parked": false,
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "device": {
+        "parked": 0,
+        "host_bytes": 0,
+        "vram_free_mib": 6265,
+        "ms": 3867.6
+      },
+      "vram": {
+        "reserve_mib": 4096,
+        "expert_slots": 14991,
+        "expert_slots_full": 16584,
+        "expert_cache_mib": 29184,
+        "expert_cache_full_mib": 32228,
+        "vram_free_mib": 6265,
+        "prompt_chunk": 32768,
+        "parked": false,
+        "auto_restore": null
+      },
+      "hardware": {
+        "gpu_util": 100,
+        "gpu_mem_used": 45894381568,
+        "gpu_mem_total": 51527024640,
+        "gpu_temp": 51,
+        "gpu_power": 113.715,
+        "gpu_power_limit": 450.0,
+        "gpu_pcie_gen": 4,
+        "gpu_pcie_gen_max": 4,
+        "gpu_pcie_width": 16,
+        "gpu_pcie_rx_mb": 26636.7431640625,
+        "gpu_pcie_tx_mb": 3054.7138671875,
+        "cpu": 6.1,
+        "ram_used": 123309891584,
+        "ram_total": 206025834496,
+        "disk_read_mb": 0.0,
+        "disk_write_mb": 0.09531197384863398,
+        "tok_s": 0.0,
+        "tok_s_mean": 0,
+        "prefill_tok_s_mean": 0.0
+      },
+      "disk": {
+        "PhysicalDrive0": {
+          "read": 15975538176,
+          "write": 4905877504
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 184077834752,
+          "write": 365526830080
+        },
+        "PhysicalDrive3": {
+          "read": 2026633081856,
+          "write": 80932323328
+        },
+        "PhysicalDrive4": {
+          "read": 648299520,
+          "write": 336360448
+        }
+      }
+    },
+    "after": {
+      "gpu": {
+        "used": 45923479552,
+        "free": 5603545088,
+        "total": 51527024640
+      },
+      "pid": 80244,
+      "physical_used": 127114444800,
+      "engine_private": 61351153664,
+      "process_io": {
+        "read_count": 10590,
+        "write_count": 104276,
+        "read_bytes": 84696700086,
+        "write_bytes": 127621,
+        "other_count": 11651,
+        "other_bytes": 476540
+      },
+      "state": "idle",
+      "parked": false,
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "device": {
+        "parked": 0,
+        "host_bytes": 0,
+        "vram_free_mib": 6265,
+        "ms": 3867.6
+      },
+      "vram": {
+        "reserve_mib": 4096,
+        "expert_slots": 14991,
+        "expert_slots_full": 16584,
+        "expert_cache_mib": 29184,
+        "expert_cache_full_mib": 32228,
+        "vram_free_mib": 6265,
+        "prompt_chunk": 32768,
+        "parked": false,
+        "auto_restore": null
+      },
+      "hardware": {
+        "gpu_util": 7,
+        "gpu_mem_used": 45890056192,
+        "gpu_mem_total": 51527024640,
+        "gpu_temp": 48,
+        "gpu_power": 55.488,
+        "gpu_power_limit": 450.0,
+        "gpu_pcie_gen": 2,
+        "gpu_pcie_gen_max": 4,
+        "gpu_pcie_width": 16,
+        "gpu_pcie_rx_mb": 13.16015625,
+        "gpu_pcie_tx_mb": 12.3974609375,
+        "cpu": 10.8,
+        "ram_used": 126953926656,
+        "ram_total": 206025834496,
+        "disk_read_mb": 0.0,
+        "disk_write_mb": 0.0,
+        "tok_s": 0.0,
+        "tok_s_mean": 0,
+        "prefill_tok_s_mean": 3803.5
+      },
+      "disk": {
+        "PhysicalDrive0": {
+          "read": 15975538176,
+          "write": 4905877504
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 184077839360,
+          "write": 365528460800
+        },
+        "PhysicalDrive3": {
+          "read": 2026633085952,
+          "write": 80932843520
+        },
+        "PhysicalDrive4": {
+          "read": 648299520,
+          "write": 336360448
+        }
+      }
+    },
+    "peak_physical_used": 127176830976,
+    "process_io_delta": {
+      "read_count": 356,
+      "write_count": 279,
+      "read_bytes": 1450462,
+      "write_bytes": 927,
+      "other_count": 1,
+      "other_bytes": 0
+    },
+    "disk_delta": {
+      "PhysicalDrive0": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive1": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive2": {
+        "read": 4608,
+        "write": 1630720
+      },
+      "PhysicalDrive3": {
+        "read": 4096,
+        "write": 520192
+      },
+      "PhysicalDrive4": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  }
+]

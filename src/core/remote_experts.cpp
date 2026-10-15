@@ -1,4 +1,5 @@
 #include "strata/core/remote_experts.hpp"
+#include "strata/core/device_park.hpp"
 #include "strata/core/remote_expert_opt.hpp"
 
 #include "strata/kernels/cpu/expert_layout.hpp"
@@ -96,12 +97,12 @@ void RemoteExperts::close() {
         if (stream_) cudaStreamSynchronize(stream_);
         if (read_stream_) cudaStreamSynchronize(read_stream_);
         cache_.close();
-        if (d_x_) cudaFree(d_x_);
-        if (d_out_) cudaFree(d_out_);
-        if (d_q8_) cudaFree(d_q8_);
-        if (d_scales_) cudaFree(d_scales_);
-        if (d_scratch_) cudaFree(d_scratch_);
-        if (d_meta_) cudaFree(d_meta_);
+        if (d_x_) strata::core::park::deallocate(d_x_);
+        if (d_out_) strata::core::park::deallocate(d_out_);
+        if (d_q8_) strata::core::park::deallocate(d_q8_);
+        if (d_scales_) strata::core::park::deallocate(d_scales_);
+        if (d_scratch_) strata::core::park::deallocate(d_scratch_);
+        if (d_meta_) strata::core::park::deallocate(d_meta_);
         if (h_x_) cudaFreeHost(h_x_);
         if (h_out_) cudaFreeHost(h_out_);
         if (h_meta_) cudaFreeHost(h_meta_);
@@ -201,12 +202,12 @@ bool RemoteExperts::open(int device, int slots, int64_t layers, int64_t experts,
         check(cudaHostAlloc((void**) &h_x_, (size_t) CAP * H * sizeof(float), cudaHostAllocPortable | cudaHostAllocMapped), "input staging", err, device) &&
         check(cudaHostAlloc((void**) &h_out_, (size_t) CAP * H * sizeof(float), cudaHostAllocPortable | cudaHostAllocMapped), "result staging", err, device) &&
         check(cudaHostAlloc(&h_meta_, meta_bytes, cudaHostAllocPortable), "metadata staging", err, device) &&
-        check(cudaMalloc((void**) &d_x_, (size_t) CAP * H * sizeof(float)), "input", err, device) &&
-        check(cudaMalloc((void**) &d_out_, (size_t) CAP * H * sizeof(float)), "result", err, device) &&
-        check(cudaMalloc((void**) &d_q8_, (size_t) CAP * (H / 32) * 36), "activation", err, device) &&
-        check(cudaMalloc((void**) &d_scales_, (size_t) CAP * (H / 32) * sizeof(float)), "activation scales", err, device) &&
-        check(cudaMalloc(&d_scratch_, scratch), "scratch", err, device) &&
-        check(cudaMalloc(&d_meta_, meta_bytes), "group metadata", err, device);
+        check(strata::core::park::allocate((void**) &d_x_, (size_t) CAP * H * sizeof(float)), "input", err, device) &&
+        check(strata::core::park::allocate((void**) &d_out_, (size_t) CAP * H * sizeof(float)), "result", err, device) &&
+        check(strata::core::park::allocate((void**) &d_q8_, (size_t) CAP * (H / 32) * 36), "activation", err, device) &&
+        check(strata::core::park::allocate((void**) &d_scales_, (size_t) CAP * (H / 32) * sizeof(float)), "activation scales", err, device) &&
+        check(strata::core::park::allocate(&d_scratch_, scratch), "scratch", err, device) &&
+        check(strata::core::park::allocate(&d_meta_, meta_bytes), "group metadata", err, device);
     if (!allocated) { close(); return false; }
     if (!check(cudaStreamCreateWithFlags(&read_stream_, cudaStreamNonBlocking), "cache read stream", err, device)) {
         close();
