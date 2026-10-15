@@ -213,7 +213,7 @@ main { flex: 1; min-height: 0; display: flex; }
 @media (max-width: 760px) { .cfg-form { grid-template-columns: 1fr; } .cfg-form .st-input { max-width: 100%; margin-bottom: 10px; } }
 
 /* 显存模式浮窗：监控与关于页共用 */
-.vram-float { position: fixed; right: 20px; bottom: 20px; width: 268px; z-index: 60;
+.vram-float { position: fixed; right: 20px; top: 64px; width: 268px; z-index: 60;
   background: var(--st-surface); border: 1px solid var(--st-line); border-radius: var(--st-r-lg);
   padding: 14px; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
 .vram-float .vf-btns { display: flex; gap: 8px; margin: 10px 0 12px; }
