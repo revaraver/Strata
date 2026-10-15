@@ -448,7 +448,7 @@ struct Options {
     bool no_host_worker = false;
     bool coupled_draft = strata::core::coupled_draft_env(); ///< Coupled draft sampling for MTP drafter under sampling
     bool mmap_experts = false;    ///< R2.1: opt OUT of the resident arena, back to MapViewOfFile
-    std::string shared_expert_arena; ///< Linux: optional file backing for the resident arena shared by processes
+    std::string shared_expert_arena; ///< optional file backing for the resident arena shared by processes
     bool resident_cpu_experts = false; ///< mmap-backed static-cache misses copied into ordinary RAM
     /// `--resident-experts` (the low-RAM PC's resident mode, chosen by setup): `--resident-cpu-experts` with the copy
     /// page-locked when the driver allows (else locked in the working set), 4 GiB of RAM headroom, and plain mmap
@@ -928,7 +928,7 @@ void usage() {
                  "  --mmap-experts       R2.1: opt OUT of the resident expert arena, back to MapViewOfFile.\n"
                  "                       The A/B arm: the mmap's rate depends on the OS page cache holding\n"
                  "                       34 GB, and measured 71.97 vs 34.78 ms/token cold vs warm.\n"
-                 "  --shared-expert-arena FILE  Linux: back the resident arena with one MAP_SHARED file.\n"
+                 "  --shared-expert-arena FILE  back the resident arena with one shared file mapping.\n"
                  "                       Put this file on /dev/shm, not ordinary SSD storage.\n"
                  "                       A small header binds an existing backing file to the same pack.\n"
                  "  --resident-cpu-experts  with mmap and a static profile, keep the experts the GPU cache does not\n"

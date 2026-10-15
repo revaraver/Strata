@@ -77,6 +77,11 @@ struct PinnedArena {
     std::vector<uint64_t> slice_starts;
     void* mapping_base = nullptr;     ///< actual mapping start; differs from base when a shared-file header exists
     uint64_t mapping_bytes = 0;       ///< bytes to release from mapping_base
+    /// A shared-file arena whose header says the pack already filled it: the caller may skip the load (the mapping
+    /// holds the same physical pages the previous process wrote).  False for a fresh or non-shared arena.
+    bool shared_preloaded = false;
+    /// Marks a shared-file arena as filled, so the next process that maps it can skip the load. No-op otherwise.
+    void mark_shared_filled();
     ~PinnedArena();
     PinnedArena(const PinnedArena&) = delete;
     PinnedArena& operator=(const PinnedArena&) = delete;

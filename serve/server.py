@@ -2600,6 +2600,11 @@ def engine_args(cfg: dict) -> list[str]:
         seg = cfg.get("vram_segment_mib")
         if isinstance(seg, int) and not isinstance(seg, bool) and seg > 0 and "--vram-segment-mib" not in args:
             args += ["--vram-segment-mib", str(seg)]
+    # opt-in: "shared_expert_arena": "<file>" - the resident expert arena is one shared file mapping, so an
+    # engine restart (the web's 卸载) reuses the same physical pages: no GGUF read, no copy. 完全卸载 deletes it.
+    sa = cfg.get("shared_expert_arena")
+    if isinstance(sa, str) and sa and "--shared-expert-arena" not in args:
+        args += ["--shared-expert-arena", sa]
     args += parallel_args(cfg, args)
     return learned_profile_args(cfg, args)
 
@@ -3110,6 +3115,7 @@ class Service:
         self.restore_after_load = None                    # a session file an image job saved before it unloaded
         self.unload_session_memory = False                # opt-in: an unload keeps the conversation in RAM (this process)
         self.session_memory = None                        # the session bytes an unload kept, until the next load restores
+        self.shared_arena_file = None                     # the config's "shared_expert_arena": deleted by a full unload
         self.stop_ids = set(tokenizer.encode(IM_END, parse_special=True) +
                             tokenizer.encode("<|endoftext|>", parse_special=True))
 
@@ -3656,6 +3662,9 @@ class Service:
                 return "busy"
             if full:                                      # 完全卸载: nothing stays in RAM, the kept conversation goes too
                 self.session_memory = None
+                if self.shared_arena_file:                # and the shared arena file: its pages leave the file cache
+                    with contextlib.suppress(OSError):
+                        os.unlink(self.shared_arena_file)
             elif self.unload_session_memory:              # 卸载到内存: the conversation survives in this process's RAM
                 self._session_to_memory()
             self.engine.unload()
@@ -7087,6 +7096,8 @@ def main() -> int:
                  " - WARNING: any web page may use the model (no API key)"), flush=True)
     svc.idle_unload_s = a.idle_unload if a.idle_unload is not None else float(cfg.get("idle_unload_s") or 0)
     svc.unload_session_memory = cfg.get("unload_session_memory") is True   # an unload keeps the conversation in RAM
+    sa = cfg.get("shared_expert_arena")
+    svc.shared_arena_file = sa if isinstance(sa, str) and sa else None   # 完全卸载 deletes it; 卸载 keeps it warm
     if svc.unload_session_memory:
         print("[strata] an unload keeps the conversation in the server's RAM; the next load restores it "
               "(no re-prefill)", flush=True)

@@ -51,7 +51,8 @@ struct SharedArenaHeader {
     uint32_t header_bytes;
     uint64_t arena_bytes;
     uint64_t pack_hash;
-    uint64_t reserved[4];
+    uint64_t filled;       // 1 once an engine has written the whole arena: the next open may skip the load
+    uint64_t reserved[3];
 };
 static_assert(sizeof(SharedArenaHeader) <= kSharedArenaHeaderBytes);
 
@@ -88,15 +89,107 @@ uint64_t free_huge_bytes() {
 // A non-empty shared_file instead maps one file whose first 4 KiB identify the pack and whose remaining bytes
 // are the resident arena.  This shared-file layout is intended for tmpfs (/dev/shm); hugetlbfs would need
 // hugepage-aligned file size and arena offset rather than the 4 KiB header layout used here.
+#ifdef _WIN32
+// The file-mapping handles behind a shared arena's view: release() must close them, not VirtualFree.
+inline std::map<void*, std::pair<HANDLE, HANDLE>>& shared_handles() {
+    static std::map<void*, std::pair<HANDLE, HANDLE>> h;
+    return h;
+}
+inline std::mutex& shared_handles_mu() { static std::mutex m; return m; }
+#endif
 void* reserve(uint64_t bytes, PageBacking& got, std::string& note, const std::string& shared_file,
-              uint64_t shared_pack_hash, void*& mapping_base, uint64_t& mapping_bytes) {
+              uint64_t shared_pack_hash, void*& mapping_base, uint64_t& mapping_bytes, bool& shared_preloaded) {
     mapping_base = nullptr;
     mapping_bytes = 0;
+    shared_preloaded = false;
 
 #ifdef _WIN32
     if (!shared_file.empty()) {
-        note = "shared-file arena backing is not implemented on Windows";
-        return nullptr;
+        // The arena is one file mapping: its first 4 KiB identify the pack, the rest is the resident arena.
+        // Mapping the same file again in a new process gives the SAME physical pages (the system file cache),
+        // so a reload after an unload reads nothing from disk and copies nothing: the bytes are already there.
+        // The file is the lifetime anchor: 卸载 keeps it (RAM stays warm), 完全卸载 deletes it (RAM given back).
+        if (shared_pack_hash == 0) {
+            note = "shared arena requires a nonzero pack hash";
+            return nullptr;
+        }
+        const uint64_t file_bytes = kSharedArenaHeaderBytes + bytes;
+        std::vector<wchar_t> wpath((size_t) MultiByteToWideChar(CP_UTF8, 0, shared_file.c_str(), -1, nullptr, 0));
+        MultiByteToWideChar(CP_UTF8, 0, shared_file.c_str(), -1, wpath.data(), (int) wpath.size());
+        HANDLE f = CreateFileW(wpath.data(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                               nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (f == INVALID_HANDLE_VALUE) {
+            note = "cannot open shared arena " + shared_file + ": win32 error " +
+                   std::to_string((unsigned long long) GetLastError());
+            return nullptr;
+        }
+        LARGE_INTEGER have;
+        bool fresh = false;
+        if (!GetFileSizeEx(f, &have) || (uint64_t) have.QuadPart < file_bytes) {
+            fresh = true;
+            LARGE_INTEGER want; want.QuadPart = (LONGLONG) file_bytes;
+            if (!SetFilePointerEx(f, want, nullptr, FILE_BEGIN) || !SetEndOfFile(f)) {
+                note = "cannot size shared arena " + shared_file + ": win32 error " +
+                       std::to_string((unsigned long long) GetLastError());
+                CloseHandle(f);
+                return nullptr;
+            }
+        }
+        HANDLE m = CreateFileMappingW(f, nullptr, PAGE_READWRITE, 0, 0, nullptr);
+        if (m == nullptr) {
+            note = "cannot map shared arena " + shared_file + ": win32 error " +
+                   std::to_string((unsigned long long) GetLastError());
+            CloseHandle(f);
+            return nullptr;
+        }
+        void* map = MapViewOfFile(m, FILE_MAP_ALL_ACCESS, 0, 0, (SIZE_T) file_bytes);
+        if (map == nullptr) {
+            note = "cannot view shared arena " + shared_file + ": win32 error " +
+                   std::to_string((unsigned long long) GetLastError());
+            CloseHandle(m);
+            CloseHandle(f);
+            return nullptr;
+        }
+        SharedArenaHeader* hdr = (SharedArenaHeader*) map;
+        if (fresh) {
+            SharedArenaHeader h{};
+            std::memcpy(h.magic, kSharedArenaMagic, sizeof h.magic);
+            h.version = 1;
+            h.header_bytes = (uint32_t) kSharedArenaHeaderBytes;
+            h.arena_bytes = bytes;
+            h.pack_hash = shared_pack_hash;
+            h.filled = 0;
+            std::memcpy(map, &h, sizeof h);
+            shared_preloaded = false;
+        } else {
+            if (std::memcmp(hdr->magic, kSharedArenaMagic, sizeof hdr->magic) != 0 || hdr->version != 1 ||
+                hdr->header_bytes != kSharedArenaHeaderBytes || hdr->arena_bytes != bytes) {
+                note = "shared arena " + shared_file + " has an incompatible or missing header";
+                UnmapViewOfFile(map); CloseHandle(m); CloseHandle(f);
+                return nullptr;
+            }
+            if (hdr->pack_hash != shared_pack_hash) {
+                char buf[200];
+                std::snprintf(buf, sizeof buf,
+                              "shared arena %s was written for pack hash %016llx, expected %016llx",
+                              shared_file.c_str(), (unsigned long long) hdr->pack_hash,
+                              (unsigned long long) shared_pack_hash);
+                note = buf;
+                UnmapViewOfFile(map); CloseHandle(m); CloseHandle(f);
+                return nullptr;
+            }
+            shared_preloaded = hdr->filled == 1;   // the bytes are already in the mapping: the caller may skip the load
+        }
+        {
+            std::lock_guard<std::mutex> lk(shared_handles_mu());
+            shared_handles()[map] = {m, f};
+        }
+        mapping_base = map;
+        mapping_bytes = file_bytes;
+        got = PageBacking::NormalPages;
+        note = "file mapping " + shared_file + (shared_preloaded ? " (pack hash checked, already filled)"
+                                                                 : " (pack hash checked)");
+        return (uint8_t*) map + kSharedArenaHeaderBytes;
     }
     // MEM_LARGE_PAGES needs SeLockMemoryPrivilege.  Having it assigned to the account is not enough: the
     // PROCESS must enable it in its own token (AdjustTokenPrivileges) before VirtualAlloc, or the call fails.
@@ -320,6 +413,17 @@ void* reserve(uint64_t bytes, PageBacking& got, std::string& note, const std::st
 void release(void* p, uint64_t bytes) {
     if (!p) return;
 #ifdef _WIN32
+    {
+        std::lock_guard<std::mutex> lk(shared_handles_mu());
+        auto it = shared_handles().find(p);
+        if (it != shared_handles().end()) {   // a shared arena's view: unmap it, close its handles; the file stays
+            UnmapViewOfFile(p);
+            CloseHandle(it->second.first);
+            CloseHandle(it->second.second);
+            shared_handles().erase(it);
+            return;
+        }
+    }
     (void) bytes;
     VirtualFree(p, 0, MEM_RELEASE);
 #else
@@ -401,7 +505,8 @@ PinnedArena::PinnedArena(uint64_t bytes, const std::vector<uint64_t>& bounds,
                          uint64_t max_pinned_bytes, const std::string& shared_file,
                          uint64_t shared_pack_hash) : capacity(bytes) {
     if (bytes == 0) return;
-    base = reserve(bytes, backing, note, shared_file, shared_pack_hash, mapping_base, mapping_bytes);
+    base = reserve(bytes, backing, note, shared_file, shared_pack_hash, mapping_base, mapping_bytes,
+                   shared_preloaded);
     if (base != nullptr && mapping_base == nullptr) {
         mapping_base = base;
         mapping_bytes = bytes;
@@ -504,7 +609,8 @@ PinnedArena::PinnedArena(uint64_t bytes, ByNeed, const std::vector<std::pair<uin
                          uint64_t shared_pack_hash) : capacity(bytes) {
     by_need = true;
     if (bytes == 0) return;
-    base = reserve(bytes, backing, note, shared_file, shared_pack_hash, mapping_base, mapping_bytes);
+    base = reserve(bytes, backing, note, shared_file, shared_pack_hash, mapping_base, mapping_bytes,
+                   shared_preloaded);
     if (base != nullptr && mapping_base == nullptr) {
         mapping_base = base;
         mapping_bytes = bytes;
@@ -589,7 +695,7 @@ PinnedArena::PinnedArena(uint64_t bytes, ByNeed, const std::vector<std::pair<uin
 PinnedArena::PinnedArena(uint64_t bytes, const std::vector<uint64_t>& bounds, Deferred)
     : capacity(bytes), bounds_(bounds) {
     if (bytes == 0 || bounds.size() < 2) return;
-    base = reserve(bytes, backing, note, std::string{}, 0, mapping_base, mapping_bytes);
+    base = reserve(bytes, backing, note, std::string{}, 0, mapping_base, mapping_bytes, shared_preloaded);
     if (base != nullptr && mapping_base == nullptr) {
         mapping_base = base;
         mapping_bytes = bytes;
@@ -626,6 +732,16 @@ void PinnedArena::register_slices(std::atomic<int>& ready) {
         }
     }
     ready.store(INT_MAX, std::memory_order_release);   // every slice done (or given up on)
+}
+
+void PinnedArena::mark_shared_filled() {
+    if (mapping_base == nullptr || base == nullptr || mapping_base == base) return;   // not a shared-file arena
+    SharedArenaHeader* hdr = (SharedArenaHeader*) mapping_base;
+    if (std::memcmp(hdr->magic, kSharedArenaMagic, sizeof hdr->magic) != 0 || hdr->arena_bytes != capacity) return;
+    hdr->filled = 1;   // in the mapping itself: the next process that maps this file sees the bytes are there
+#ifdef _WIN32
+    FlushViewOfFile(hdr, sizeof *hdr);
+#endif
 }
 
 PinnedArena::~PinnedArena() {
