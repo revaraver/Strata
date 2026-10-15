@@ -144,6 +144,8 @@ NVIDIA 和 AMD 的步骤完全一样。安装程序会识别你的显卡，并�
     （[设置方法](docs/DETAILS.md#the-responses-api-and-codex-cli)）。
 - **思考：** 在聊天菜单或应用的“reasoning effort”里选择 **off、low、medium 或 high**。off 最快，
   high 最适合难题。
+- **中文思考翻译：** 可通过 `reasoning-translation.json` 开启本地 CPU 翻译，随 Strata 自动启动，
+  客户端仍连接原端口并接收中文流式思考。[安装与配置](docs/REASONING_TRANSLATION.zh-CN.md)。
 - **图片：** 在安装时对“Images?”选是。然后在聊天里点 **Picture**，或在你的应用里附上图片。
   AMD 显卡在 Linux 上通过处理器识别图片；在 Windows 上暂时还不行。
 - **从手机或另一台电脑访问：** `START-HERE.bat --setup --host 0.0.0.0 --api-key <secret>`。一定要设置 key。

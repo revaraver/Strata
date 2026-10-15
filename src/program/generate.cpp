@@ -4547,6 +4547,19 @@ int main(int argc, char** argv) {
                                        : std::min<int64_t>((int64_t) profile.size(), xcache.slots());
         // #286: an unbuffered file tier reads the pairs in batches of 64, the next batch while this one is copied
         std::future<void> ahead;
+        // Keep routing-ranked admission and slot IDs unchanged. On Windows,
+        // assemble 64 native experts ahead on CPU workers while the current
+        // batch is copied to the GPU. No asynchronous GPU buffer reuse.
+        bool mapped_startup_batch = false;
+#if defined(_WIN32)
+        const char* startup_batch = std::getenv("STRATA_STARTUP_BATCH");
+        mapped_startup_batch = !per_layer && srcp == &src && src.startup_prefetch_available() && !src.unbuffered() &&
+                               (startup_batch == nullptr || std::atoi(startup_batch) != 0);
+        if (mapped_startup_batch)
+            std::fprintf(stderr, "strata generate: Windows startup pipeline: 64 experts per batch, "
+                                 "mapped range prefetch and parallel assembly (STRATA_STARTUP_BATCH=0 disables)\n");
+#endif
+        const bool batch_fill = !per_layer && srcp == &src && (src.unbuffered() || mapped_startup_batch);
         auto read_batch = [&](int64_t at) { src.prefetch_pairs(profile.data() + at, std::min<int64_t>(64, want - at)); };
         // mapped reads: advise the next `fill_ahead` pairs so their reads overlap; STRATA_FILL_AHEAD=0 turns it off
         int64_t fill_ahead = 0;
@@ -4560,7 +4573,7 @@ int main(int argc, char** argv) {
         const auto fill_t0 = std::chrono::steady_clock::now();
         uint64_t fill_bytes = 0;
         for (int64_t i = 0; i < want; ++i) {
-            if (!per_layer && srcp == &src && src.unbuffered() && i % 64 == 0) {
+            if (batch_fill && i % 64 == 0) {
                 if (ahead.valid()) ahead.get();
                 else read_batch(i);
                 if (i + 64 < want) ahead = std::async(std::launch::async, read_batch, i + 64);

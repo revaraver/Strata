@@ -503,6 +503,7 @@ class Event:
     kind: str                     # "reasoning" | "content" | "tool_call"
     text: str = ""
     call: ToolCall | None = None
+    original_text: str | None = None  # translation provenance, never sent in API deltas
 
 
 THINK_END = "</think>"

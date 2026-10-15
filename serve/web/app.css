@@ -121,7 +121,7 @@ main { flex: 1; min-height: 0; display: flex; }
 .cc-note { margin: 0; }
 .cc-note:empty { display: none; }
 .mcp-card { display: flex; flex-direction: column; gap: var(--st-s-3); }
-.cfg-form { display: grid; grid-template-columns: minmax(180px, max-content) minmax(0, 1fr); gap: var(--st-s-3) var(--st-s-4);
+.cfg-form { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(180px, 1fr); gap: var(--st-s-3) var(--st-s-4);
             align-items: center; }
 .cfg-form label { font-size: var(--st-fs-sm); font-weight: var(--st-fw-medium); }
 .cfg-form label code { font: 400 12px var(--st-font-mono); color: var(--st-ink-muted); display: block; }
@@ -182,3 +182,18 @@ main { flex: 1; min-height: 0; display: flex; }
   .facts { grid-template-columns: 1fr; gap: 2px; }
   .facts dd { margin-bottom: var(--st-s-2); }
 }
+
+/* Chinese model-setting labels and field explanations. */
+.cfg-section { grid-column: 1 / -1; font-size: 16px; margin: 18px 0 3px; padding-bottom: 8px; border-bottom: 1px solid var(--st-line-soft); }
+.cfg-section:first-child { margin-top: 4px; }
+.cfg-help { display: block; font-size: 12px; font-weight: 400; color: var(--st-ink-muted); margin-top: 4px; line-height: 1.65; overflow-wrap: anywhere; }
+.cfg-backend-note { color: var(--st-warn); padding: 10px; background: var(--st-surface-2); border-radius: 8px; }
+.cfg-form input:disabled, .cfg-form select:disabled { opacity: .55; }
+.cfg-profiles { grid-column: 1 / -1; display: grid; gap: 8px; margin-top: 6px; }
+.cfg-profile-row { display: grid; grid-template-columns: minmax(140px, 1.3fr) minmax(110px, 1fr) minmax(120px, 1fr) minmax(100px, 1fr) auto; gap: 6px; align-items: center; }
+.cfg-profile-row .st-input { width: 100%; max-width: none; }
+.cfg-profile-add, .cfg-profile-row .p-del { background: var(--st-surface-2); color: inherit; border: 1px solid var(--st-line-soft); border-radius: 6px; padding: 7px 12px; cursor: pointer; font: inherit; }
+.cfg-profile-add { justify-self: start; }
+@media (max-width: 760px) { .cfg-profile-row { grid-template-columns: 1fr 1fr; } }
+
+@media (max-width: 760px) { .cfg-form { grid-template-columns: 1fr; } .cfg-form .st-input { max-width: 100%; margin-bottom: 10px; } }

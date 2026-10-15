@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "auto_start": true,
+  "backend": "t5",
+  "sentence_mode": true,
+  "model": "pack/translation/t5-en-zh-small-ct2",
+  "port": 8096,
+  "threads": 8,
+  "beam_size": 1,
+  "nmt_workers": 2,
+  "batch_segments": 8,
+  "timeout_s": 10,
+  "startup_timeout_s": 30,
+  "max_pending_segments": 32,
+  "max_output_tokens": 256
+}
