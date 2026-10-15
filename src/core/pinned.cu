@@ -735,12 +735,22 @@ void PinnedArena::register_slices(std::atomic<int>& ready) {
 }
 
 void PinnedArena::mark_shared_filled() {
-    if (mapping_base == nullptr || base == nullptr || mapping_base == base) return;   // not a shared-file arena
+    if (mapping_base == nullptr || base == nullptr || mapping_base == base) {
+        std::fprintf(stderr, "strata generate: mark_shared_filled skipped (mapping_base=%p base=%p)\n",
+                     mapping_base, base);
+        return;   // not a shared-file arena
+    }
     SharedArenaHeader* hdr = (SharedArenaHeader*) mapping_base;
-    if (std::memcmp(hdr->magic, kSharedArenaMagic, sizeof hdr->magic) != 0 || hdr->arena_bytes != capacity) return;
+    if (std::memcmp(hdr->magic, kSharedArenaMagic, sizeof hdr->magic) != 0 || hdr->arena_bytes != capacity) {
+        std::fprintf(stderr, "strata generate: mark_shared_filled refused (magic_ok=%d arena=%llu cap=%llu)\n",
+                     std::memcmp(hdr->magic, kSharedArenaMagic, sizeof hdr->magic) == 0,
+                     (unsigned long long) hdr->arena_bytes, (unsigned long long) capacity);
+        return;
+    }
     hdr->filled = 1;   // in the mapping itself: the next process that maps this file sees the bytes are there
 #ifdef _WIN32
-    FlushViewOfFile(hdr, sizeof *hdr);
+    const BOOL fl = FlushViewOfFile(hdr, sizeof *hdr);
+    std::fprintf(stderr, "strata generate: shared arena marked filled (flush=%d err=%lu)\n", (int) fl, GetLastError());
 #endif
 }
 
