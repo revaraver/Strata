@@ -216,8 +216,8 @@ main { flex: 1; min-height: 0; display: flex; }
 .vram-float { position: fixed; right: 20px; top: 64px; width: 268px; z-index: 60;
   background: var(--st-surface); border: 1px solid var(--st-line); border-radius: var(--st-r-lg);
   padding: 14px; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
-.vram-float .vf-btns { display: flex; gap: 8px; margin: 10px 0 12px; }
-.vram-float .vf-btns .st-btn { flex: 1; }
+.vram-float .vf-btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; }
+.vram-float .vf-btns .st-btn { flex: 1 1 calc(50% - 4px); min-width: 0; }
 .vram-float .vf-btns .st-btn[data-on="1"] { border-color: var(--st-accent); color: var(--st-accent-text); }
 .vram-float .vf-set { display: flex; align-items: center; gap: 8px; font-size: var(--st-fs-sm);
   color: var(--st-ink-muted); margin-bottom: 8px; }

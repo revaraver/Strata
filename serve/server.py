@@ -3579,12 +3579,12 @@ class Service:
 
     UNLOAD_WAIT_S = 300.0       # #1997: POST /unload?wait=1 waits this long for the running turn (wait=<s> to choose)
 
-    def unload_waiting(self, wait_s: float) -> str:
+    def unload_waiting(self, wait_s: float, full: bool = False) -> str:
         """#1997: unload(), but a running or queued request is waited for (up to wait_s) instead of answering "busy":
         a peer server that needs this GPU can then free the card on the server's terms.  "busy" after wait_s."""
         deadline = time.monotonic() + max(0.0, wait_s)
         while True:
-            r = self.unload()
+            r = self.unload(full=full)
             if r != "busy" or time.monotonic() >= deadline:
                 return r
             time.sleep(0.25)
@@ -3638,9 +3638,10 @@ class Service:
                 with contextlib.suppress(OSError):
                     os.unlink(path)
 
-    def unload(self, idle_for: float | None = None) -> str:
+    def unload(self, idle_for: float | None = None, full: bool = False) -> str:
         """Stop the engine between requests: "unloaded", "not loaded", "busy" (a request is running or waiting, or
-        with idle_for: one ran more recently than that) or "unsupported"."""
+        with idle_for: one ran more recently than that) or "unsupported".  full=True is the plain unload (the web's
+        完全卸载): the weights leave RAM too, and the conversation is not kept; the default keeps it (卸载到内存)."""
         if not hasattr(self.engine, "unload"):
             return "unsupported"
         if not self.fifo.acquire(blocking=False):
@@ -3653,7 +3654,9 @@ class Service:
                     return "busy"
             if idle_for is not None and time.time() - (self.last_request_at or self.started_at) < idle_for:
                 return "busy"
-            if self.unload_session_memory:              # the conversation survives the unload in this process's RAM
+            if full:                                      # 完全卸载: nothing stays in RAM, the kept conversation goes too
+                self.session_memory = None
+            elif self.unload_session_memory:              # 卸载到内存: the conversation survives in this process's RAM
                 self._session_to_memory()
             self.engine.unload()
             if self.vision is not None and hasattr(self.vision, "unload"):
@@ -5664,9 +5667,11 @@ def make_handler(svc: Service):
                 return
             if path == "/unload":                            # give the GPU back now (between requests)
                 try:
-                    wait_s = unload_wait(parse_qs(urlsplit(self.path).query).get("wait", [None])[0],
-                                         svc.UNLOAD_WAIT_S)
-                    r = svc.unload_waiting(wait_s) if wait_s else svc.unload()
+                    q = parse_qs(urlsplit(self.path).query)
+                    wait_s = unload_wait(q.get("wait", [None])[0], svc.UNLOAD_WAIT_S)
+                    # ?full=1: 完全卸载 - also drop the conversation kept in RAM; default: keep it (卸载到内存)
+                    full = q.get("full", ["0"])[0] in ("1", "true", "yes")
+                    r = svc.unload_waiting(wait_s, full) if wait_s else svc.unload(full=full)
                 except EngineStuck as e:
                     self._json(503, {"error": {"type": "server_error", "message": str(e)}})
                     return

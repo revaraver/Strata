@@ -7,7 +7,7 @@
 <link rel="icon" href="web/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="web/tokens.css">
 <link rel="stylesheet" href="web/components.css">
-<link rel="stylesheet" href="web/app.css?v=zh-vramcard-1">
+<link rel="stylesheet" href="web/app.css?v=zh-vramcard-2">
 <script>
   // the theme before the first paint: the saved choice, else the system's
   try {
@@ -264,13 +264,14 @@
   <div class="vf-btns">
     <button class="st-btn" id="vf-fast" type="button" title="把预留显存切到高速档">高速</button>
     <button class="st-btn" id="vf-mid" type="button" title="把预留显存切到中速档">中速</button>
-    <button class="st-btn st-btn--secondary" id="vf-unload" type="button" title="卸载模型，显存全部交还；下一条请求自动加载">卸载</button>
+    <button class="st-btn st-btn--secondary" id="vf-unload" type="button" title="卸载：权重留在内存，对话也保留；下一条请求快速加载">卸载</button>
+    <button class="st-btn st-btn--secondary" id="vf-full" type="button" title="完全卸载：权重从内存清掉，对话也不保留；下一条请求从磁盘完整加载">完全卸载</button>
   </div>
   <label class="vf-set">高速预留<input class="st-input" id="vf-fast-mib" type="number" min="0" step="512" title="高速档为其他程序预留的显存（MiB）"><span class="muted">MiB</span></label>
   <label class="vf-set">中速预留<input class="st-input" id="vf-mid-mib" type="number" min="0" step="512" title="中速档为其他程序预留的显存（MiB）"><span class="muted">MiB</span></label>
   <p class="muted small" id="vf-note"></p>
 </aside>
 <div class="st-toasts" id="toasts" aria-live="polite"></div>
-<script src="web/app.js?v=zh-vramcard-1"></script>
+<script src="web/app.js?v=zh-vramcard-2"></script>
 </body>
 </html>
