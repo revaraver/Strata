@@ -3,6 +3,7 @@
 
 #include "strata/kernels/f16_bits.hpp"
 #include "strata/platform/memory.hpp"
+#include "strata/platform/windows_shared_memory.hpp"
 
 #include <cinttypes>
 #include <cuda_runtime.h>
@@ -78,6 +79,17 @@ const char* file_name(int id) {
 /// non-ASCII name would silently fail to open, so the caller gets the errno rather than a null pointer.
 bool read_at(std::FILE* f, uint64_t off, void* dst, size_t n, std::string& err, const char* what) {
 #if defined(_WIN32)
+    if (!strata::platform::winmem::space().empty() && n) {
+        const HANDLE h = (HANDLE) _get_osfhandle(_fileno(f));
+        std::vector<wchar_t> w(32768);
+        const DWORD len = GetFinalPathNameByHandleW(h, w.data(), (DWORD) w.size(), FILE_NAME_NORMALIZED);
+        if (!len || len >= w.size()) { err = "resident weight source path unavailable"; return false; }
+        const int count = WideCharToMultiByte(CP_UTF8, 0, w.data(), (int) len, nullptr, 0, nullptr, nullptr);
+        std::string path((size_t) count, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, w.data(), (int) len, path.data(), count, nullptr, nullptr);
+        try { std::memcpy(dst, strata::platform::winmem::file_range(path, off, n), n); return true; }
+        catch (const std::exception& e) { err = e.what(); return false; }
+    }
     if (_fseeki64(f, (long long) off, SEEK_SET) != 0) { err = std::string(what) + ": seek failed"; return false; }
 #else
     if (fseeko(f, (off_t) off, SEEK_SET) != 0) { err = std::string(what) + ": seek failed"; return false; }

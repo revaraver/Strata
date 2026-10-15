@@ -336,6 +336,16 @@ public:
     }
     size_t superseded() const { return superseded_; }
 
+#ifdef _WIN32
+    // A RAM unload also parked the idle GPU slots. Restore the previous working set without
+    // evicting another saved session solely because those slots count against the host budget now.
+    void restore_parked(SavedConversation&& image) {
+        const size_t n = image.bytes();
+        budget_ = std::max(budget_, bytes() + n);
+        slots_ = std::max(slots_, entries_.size() + 1);
+        entries_.push_back(std::move(image)); bytes_ += n;
+    }
+#endif
     bool put(SavedConversation&& image, size_t held = 0) {
         const size_t n = image.bytes();
         if (!enabled() || held > budget_ || n > budget_ - held) return false;   // make_room's refusal, first

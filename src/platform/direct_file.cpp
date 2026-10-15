@@ -1,5 +1,6 @@
 // src/platform/direct_file.cpp - see include/strata/platform/direct_file.hpp.
 #include "strata/platform/direct_file.hpp"
+#include "strata/platform/windows_shared_memory.hpp"
 #include "strata/platform/aux_cpus.hpp"
 
 #include <algorithm>
@@ -81,6 +82,8 @@ struct Req {
 struct DirectFile::Impl {
     HANDLE file = INVALID_HANDLE_VALUE;
     HANDLE port = nullptr;
+    const uint8_t* memory = nullptr;
+    uint64_t memory_offset = 0, memory_bytes = 0;
     uint64_t size = 0;
     std::mutex mu;                      // everything below
     std::deque<Req*> free_reqs;
@@ -103,6 +106,17 @@ struct DirectFile::Impl {
     }
 
     void issue(const Pending& p) {
+        if (memory) {
+            const uint64_t begin = std::max(p.offset, memory_offset);
+            const uint64_t end = std::min(p.offset + p.length, memory_offset + memory_bytes);
+            const uint32_t bytes = (uint32_t) std::min<uint64_t>(p.length, p.offset < size ? size - p.offset : 0);
+            std::memset(p.buffer, 0, bytes); // alignment margins are outside the table and are never consumed
+            if (begin < end) std::memcpy((uint8_t*) p.buffer + begin - p.offset,
+                                          memory + begin - memory_offset, (size_t) (end - begin));
+            { std::lock_guard<std::mutex> lk(mu); immediate.push_back(Completion{p.tag, bytes, begin < end}); }
+            PostQueuedCompletionStatus(port, 0, 0, nullptr);
+            return;
+        }
         Req* r;
         {
             std::lock_guard<std::mutex> lk(mu);
@@ -189,8 +203,18 @@ bool DirectFile::open(const std::string& path, std::string& err) {
     return true;
 }
 
+bool DirectFile::retain_range(const std::string& path, uint64_t offset, uint64_t bytes, std::string& err) {
+    if (strata::platform::winmem::space().empty()) return true;
+    try {
+        impl_->memory = strata::platform::winmem::file_range(path, offset, bytes);
+        impl_->memory_offset = offset; impl_->memory_bytes = bytes;
+        return true;
+    } catch (const std::exception& e) { err = e.what(); return false; }
+}
+
 void DirectFile::close() {
     impl_->stop_pool();
+    impl_->memory = nullptr; impl_->memory_bytes = 0;
     if (impl_->port != nullptr) CloseHandle(impl_->port);
     if (impl_->file != INVALID_HANDLE_VALUE) CloseHandle(impl_->file);
     impl_->port = nullptr;

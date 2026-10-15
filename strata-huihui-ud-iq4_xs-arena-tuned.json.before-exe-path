@@ -1,0 +1,88 @@
+{
+ "exe": "D:\\git\\Strata-latest\\build-huihui-q4-load\\strata.exe",
+ "args": [
+  "--pack",
+  "D:\\git\\Strata-data\\packs\\huihui-ud-iq4_xs",
+  "--native",
+  "R:\\data\\llm\\huihui-ai\\Huihui-Qwen3.8-Flash-Next-abliterated-GGUF\\Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+  "--expert-profile",
+  "D:\\git\\Strata-latest\\data\\expert-profile.bin",
+  "--expert-cache",
+  "auto",
+  "--prefill",
+  "auto:32768",
+  "--spec",
+  "4",
+  "--mtp",
+  "D:\\git\\Strata-data\\mtp\\rt",
+  "--kv",
+  "int8",
+  "--kv-resident",
+  "32768",
+  "--vision",
+  "--vram-reserve-mib",
+  "4096",
+  "--conversation-cache-mib",
+  "32768",
+  "--conversation-cache-slots",
+  "8",
+  "--conversation-cache-min-free-mib",
+  "8192",
+  "--batch-mtp",
+  "--max-context",
+  "262144",
+  "--spec-min-p",
+  "0.5",
+  "--adapt-every",
+  "1",
+  "--adapt-swaps",
+  "80",
+  "--adapt-decay",
+  "0.97"
+ ],
+ "cwd": "D:\\git\\Strata-latest",
+ "tokenizer": "D:\\git\\Strata-data\\packs\\huihui-ud-iq4_xs\\tokenizer",
+ "model_name": "huihui-qwen3.8-flash-next-ud-iq4_xs-arena-tuned",
+ "log": "D:\\git\\Strata-latest\\strata-huihui-ud-iq4_xs-arena-tuned.log",
+ "lib_dirs": [
+  "D:\\git\\Strata-latest\\engine",
+  "D:\\BuildTools\\Strata\\cuda-13.0.2\\bin",
+  "D:\\git\\Strata-latest\\.venv\\Lib\\site-packages\\nvidia\\cu13\\bin\\x86_64"
+ ],
+ "port": 8080,
+ "gpu": 0,
+ "gpus_asked": true,
+ "vision": {
+  "exe": "D:\\git\\Strata-latest\\engine\\strata-vision.exe",
+  "mmproj": "R:\\data\\llm\\huihui-ai\\Huihui-Qwen3.8-Flash-Next-abliterated-GGUF\\mmproj-model-bf16.gguf",
+  "model": "R:\\data\\llm\\huihui-ai\\Huihui-Qwen3.8-Flash-Next-abliterated-GGUF\\Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+  "gpu": true,
+  "max_tokens": 1024
+ },
+ "host": "0.0.0.0",
+ "api_key": "123",
+ "env": {
+  "STRATA_STARTUP_BATCH": "1"
+ },
+ "reasoning_budget_tokens": 2048,
+ "model_profiles": [
+  {
+   "name": "strata_compress",
+   "thinking": "off"
+  },
+  {
+   "name": "strata_vision",
+   "thinking": "on",
+   "reasoning_effort": "low",
+   "reasoning_budget_tokens": 2048
+  },
+  {
+   "name": "strata_qwen",
+   "thinking": "on",
+   "reasoning_effort": "medium",
+   "reasoning_budget_tokens": 4096
+  }
+ ],
+ "parallel": 2,
+ "fit_max_tokens": true
+}

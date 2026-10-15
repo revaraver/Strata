@@ -345,6 +345,9 @@ bool PleReader::open(const std::string& path, uint64_t table_offset, uint64_t n_
         close();
         return false;
     }
+#ifdef _WIN32
+    if (!impl_->file.retain_range(path, table_offset, n_rows * (uint64_t) row_bytes, err)) { close(); return false; }
+#endif
     impl_->table_offset = table_offset;
     impl_->n_rows = n_rows;
     impl_->max_inflight = max_inflight;

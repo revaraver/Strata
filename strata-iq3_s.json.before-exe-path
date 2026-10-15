@@ -1,0 +1,86 @@
+{
+ "exe": "D:\\git\\Strata-latest\\build-huihui-q4-load\\strata.exe",
+ "args": [
+  "--pack",
+  "D:\\git\\Strata-data\\packs\\iq3_s",
+  "--native",
+  "R:\\data\\llm\\SC117\\Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF\\Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00001-of-00002.gguf",
+  "--ple-gguf",
+  "R:\\data\\llm\\SC117\\Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF\\Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00002-of-00002.gguf",
+  "--expert-profile",
+  "D:\\git\\Strata-latest\\data\\expert-profile.bin",
+  "--expert-cache",
+  "auto",
+  "--prefill",
+  "auto:32768",
+  "--spec",
+  "4",
+  "--mtp",
+  "D:\\git\\Strata-data\\mtp\\rt",
+  "--kv",
+  "int8",
+  "--kv-resident",
+  "32768",
+  "--vision",
+  "--vram-reserve-mib",
+  "4096",
+  "--conversation-cache-mib",
+  "32768",
+  "--conversation-cache-slots",
+  "8",
+  "--conversation-cache-min-free-mib",
+  "8192",
+  "--batch-mtp",
+  "--max-context",
+  "262144",
+  "--spec-min-p",
+  "0.5",
+  "--pool-workers",
+  "12"
+ ],
+ "cwd": "D:\\git\\Strata-latest",
+ "tokenizer": "D:\\git\\Strata-data\\packs\\iq3_s\\tokenizer",
+ "model_name": "qwen3.8-flash-next-iq3_s",
+ "log": "D:\\git\\Strata-latest\\strata-iq3_s.log",
+ "lib_dirs": [
+  "D:\\git\\Strata-latest\\engine",
+  "D:\\git\\Strata-latest\\.venv\\Lib\\site-packages\\nvidia\\cu13\\bin\\x86_64"
+ ],
+ "port": 8080,
+ "gpu": 0,
+ "gpus_asked": true,
+ "vision": {
+  "exe": "D:\\git\\Strata-latest\\engine\\strata-vision.exe",
+  "mmproj": "R:\\data\\llm\\SC117\\Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF\\mmproj-Qwen3.8-Flash-Next-BF16.gguf",
+  "model": "R:\\data\\llm\\SC117\\Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF\\Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00001-of-00002.gguf",
+  "gpu": true,
+  "max_tokens": 1024
+ },
+ "host": "0.0.0.0",
+ "api_key": "123",
+ "env": {
+  "STRATA_STARTUP_BATCH": "1"
+ },
+ "reasoning_budget_tokens": 8192,
+ "parallel": 2,
+ "effort_position": "end",
+ "fit_max_tokens": true,
+ "model_profiles": [
+  {
+   "name": "strata_compress",
+   "thinking": "off"
+  },
+  {
+   "name": "strata_vision",
+   "thinking": "on",
+   "reasoning_effort": "medium",
+   "reasoning_budget_tokens": 2048
+  },
+  {
+   "name": "strata_4096",
+   "thinking": "on",
+   "reasoning_effort": "medium",
+   "reasoning_budget_tokens": 4096
+  }
+ ]
+}

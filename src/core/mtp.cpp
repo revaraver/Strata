@@ -1,5 +1,6 @@
 // src/core/mtp.cpp - see include/strata/core/mtp.hpp.
 #include "strata/core/mtp.hpp"
+#include "strata/platform/windows_shared_memory.hpp"
 #include "strata/core/coupled_draft.hpp"
 #include "strata/core/spec_prob.hpp"
 #include "strata/core/on_device.hpp"
@@ -126,6 +127,12 @@ bool read_file(const std::string& path, std::vector<uint8_t>& out) {
     strata::platform::advise_willneed(fileno(f), 0, (uint64_t) n);
 #endif
     out.resize((size_t) n);
+#ifdef _WIN32
+    if (n && !strata::platform::winmem::space().empty()) {
+        try { std::memcpy(out.data(), strata::platform::winmem::file_range(path, 0, (uint64_t) n), (size_t) n); return true; }
+        catch (const std::exception&) { return false; }
+    }
+#endif
     return n == 0 || std::fread(out.data(), 1, (size_t) n, f) == (size_t) n;
 }
 

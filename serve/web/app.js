@@ -233,22 +233,25 @@ function renderConvCache(c) {
 }
 
 // ------------------------------------------------------------------ 显存模式浮窗（#533 的界面）
-const VF = {fast: store.get("vram_fast_mib", 4096), mid: store.get("vram_mid_mib", 32768), busy: false};
+const VF = {fast: store.get("vram_fast_mib", 4096), mid: store.get("vram_mid_mib", 32768), zero: store.get("vram_zero_mib", 45056), last: null, restore: null, busy: false};
 $("vf-fast-mib").value = VF.fast;
 $("vf-mid-mib").value = VF.mid;
 $("vf-fast-mib").onchange = () => { VF.fast = Math.max(0, parseInt($("vf-fast-mib").value || "0", 10));
   $("vf-fast-mib").value = VF.fast; store.set("vram_fast_mib", VF.fast); };
 $("vf-mid-mib").onchange = () => { VF.mid = Math.max(0, parseInt($("vf-mid-mib").value || "0", 10));
   $("vf-mid-mib").value = VF.mid; store.set("vram_mid_mib", VF.mid); };
+$("vf-zero-mib").value = VF.zero;
+$("vf-zero-mib").onchange = () => { VF.zero = Math.max(0, parseInt($("vf-zero-mib").value || "0", 10));
+  $("vf-zero-mib").value = VF.zero; store.set("vram_zero_mib", VF.zero); };
 async function vfPost(path, body) {
   if (VF.busy) return;
   VF.busy = true; $("vram-float").querySelectorAll("button").forEach(b => b.disabled = true);
   try {
-    const r = await fetch(path, {method: "POST", headers: headers(true), body: body ? JSON.stringify(body) : ""});
+    const r = await fetch(path, {method: "POST", headers: headers(true), body: JSON.stringify(body || {})});
     const j = await r.json().catch(() => ({}));
     if (!r.ok) toast("error", "操作失败", (j.error && j.error.message) || `HTTP ${r.status}`, 6000);
     else if (j.status === "busy") toast("warn", "模型正忙", "等当前请求结束后再试。");
-    else if (j.status === "not loaded") toast("info", "已记录", "模型未加载；这条预留会在下次加载时生效。");
+    else if (j.status === "not loaded") toast("info", path.startsWith("unload") ? "已卸载" : "已记录", path.startsWith("unload") ? "权重已释放，对话继续保留。" : "这条预留会在下次加载时生效。");
     else toast("success", path === "unload" ? (j.session_kept ? "已卸载（对话已存内存）" : "已卸载")
                : path.startsWith("unload") ? "已完全卸载" : "显存已调整",
                j.vram_free_mib != null ? `现在空闲 ${fmt(j.vram_free_mib / 1024, 1)} GB` : (j.note || ""));
@@ -258,6 +261,10 @@ async function vfPost(path, body) {
 }
 $("vf-fast").onclick = () => vfPost("v1/vram", {reserve_mib: VF.fast});
 $("vf-mid").onclick = () => vfPost("v1/vram", {reserve_mib: VF.mid});
+$("vf-zero").onclick = () => vfPost("v1/vram", {reserve_mib: VF.zero});
+$("vf-zero-offload").onclick = () => {   // 记住当前档位（高速/中速/自定义），下一条请求恢复它；没记住就回高速
+  VF.restore = VF.last != null && VF.last !== VF.zero ? VF.last : VF.fast;
+  vfPost("v1/vram", {reserve_mib: VF.zero, auto_restore: VF.restore}); };
 $("vf-unload").onclick = () => vfPost("unload");
 $("vf-full").onclick = () => vfPost("unload?full=1");
 function renderVramCard(m) {
@@ -267,24 +274,30 @@ function renderVramCard(m) {
   const live = m.live || {}, eng = m.engine || {}, v = eng.vram || {};
   const unloaded = live.state === "unloaded";
   const r = v.reserve_mib;
+  if (r != null && r !== VF.zero) VF.last = r;   // 零速卸载要知道"之前的档位"是什么
   let mode = "默认", on = "";
-  if (unloaded) mode = "已卸载";
+  if (unloaded) mode = eng.retained_ram?.weights_bytes > 0 ? "已卸载到内存" : "完全卸载";
   else if (r != null && r === VF.fast) { mode = "高速"; on = "vf-fast"; }
   else if (r != null && r === VF.mid) { mode = "中速"; on = "vf-mid"; }
+  else if (r != null && r === VF.zero) { mode = v.auto_restore != null ? "已卸载（下一条对话自动恢复）" : "零速"; on = v.auto_restore != null ? "vf-zero-offload" : "vf-zero"; }
   else if (r != null) mode = `自定义 ${r} MiB`;
   $("vf-mode").textContent = mode;
   $("vf-fast").dataset.on = on === "vf-fast" ? "1" : "0";
   $("vf-mid").dataset.on = on === "vf-mid" ? "1" : "0";
+  $("vf-zero").dataset.on = on === "vf-zero" ? "1" : "0";
+  $("vf-zero-offload").dataset.on = on === "vf-zero-offload" ? "1" : "0";
   const gbOf = (mib) => mib != null ? `${fmt(mib / 1024, 1)} GB` : null;
   facts($("vf-facts"), [
     ["空闲显存", gbOf(v.vram_free_mib ?? eng.vram_free_mib)],
     ["专家缓存", v.expert_cache_mib != null ? `${gbOf(v.expert_cache_mib)} / ${gbOf(v.expert_cache_full_mib)}` : null],
     ["当前预留", r != null ? `${fmt(r)} MiB` : null],
+    ["内存权重", eng.retained_ram ? `${fmt(eng.retained_ram.weights_bytes / 2 ** 30, 1)} GiB` : null],
+    ["已存对话", eng.retained_ram?.session_bytes ? `${fmt(eng.retained_ram.session_bytes / 2 ** 20)} MiB` : null],
   ]);
   const elastic = v.elastic || eng.vram_elastic;
   $("vf-note").textContent = !elastic
     ? "热切换需要引擎以 vram_elastic 启动（改 run config 后重启一次）；未开启时只有卸载可用。"
-    : "切换即时生效，不重启、不重新预填充；卸载后显存全部交还，下一条请求自动加载并恢复这里选定的预留档。";
+    : (eng.retained_ram?.error || "卸载：权重和对话保留在内存；完全卸载：释放权重，保留对话。下次请求自动加载。");
 }
 
 function renderTotals(t) {

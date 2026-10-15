@@ -3,6 +3,7 @@
 // code with no state to hide, and a header-only split cannot introduce a duplicate-symbol or
 // missing-declaration bug in code that is already validated.
 #pragma once
+#include "strata/platform/windows_shared_memory.hpp"
 // src/artifact/gguf_reader.cpp - P1.S2: GGUF v3 reader, mmap, no ggml dependency.
 //
 // The C++ counterpart of tools/gguf_reader.py, which has been the reference since P0.S6 (written
@@ -381,7 +382,16 @@ public:
         auto it = meta_.find(key);
         return it == meta_.end() ? nullptr : &it->second;
     }
-    const uint8_t* tensor_data(const TensorInfo& t) const { return base_ + data_start_ + t.offset; }
+    const uint8_t* tensor_data(const TensorInfo& t) const {
+#ifdef _WIN32
+        if (!platform::winmem::space().empty()) {
+            int el = 0, by = 0;
+            if (!block_geometry(t.type, el, by)) throw std::runtime_error("unknown resident tensor format");
+            return platform::winmem::file_range(path_, data_start_ + t.offset, t.elements() / el * by);
+        }
+#endif
+        return base_ + data_start_ + t.offset;
+    }
 
 private:
     void open() {

@@ -1,0 +1,1196 @@
+[
+  {
+    "phase": "seed-batch",
+    "elapsed_s": 2.859,
+    "result": [
+      {
+        "usage": {
+          "prompt_tokens": 1524,
+          "completion_tokens": 12,
+          "total_tokens": 1536,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "error": null,
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "reasoning_content": "We need to respond to user: \"请记住测试编号 "
+            },
+            "finish_reason": "length"
+          }
+        ]
+      },
+      {
+        "usage": {
+          "prompt_tokens": 1524,
+          "completion_tokens": 12,
+          "total_tokens": 1536,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "error": null,
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "reasoning_content": "We need to respond to user: \"请记住测试编号 "
+            },
+            "finish_reason": "length"
+          }
+        ]
+      }
+    ],
+    "before": {
+      "state": "idle",
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "requests": [],
+      "physical_used": 144165625856,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 173050014208,
+          "write": 342517352960
+        },
+        "PhysicalDrive3": {
+          "read": 1672463532032,
+          "write": 80021471232
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334419968
+        }
+      }
+    },
+    "after": {
+      "state": "idle",
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1266.6,
+          "generated": null
+        }
+      ],
+      "physical_used": 145008250880,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 173050029056,
+          "write": 342517586432
+        },
+        "PhysicalDrive3": {
+          "read": 1672463532032,
+          "write": 80021585920
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334465024
+        }
+      }
+    },
+    "peak_physical_used": 145008250880,
+    "disk_delta": {
+      "PhysicalDrive0": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive1": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive2": {
+        "read": 14848,
+        "write": 233472
+      },
+      "PhysicalDrive3": {
+        "read": 0,
+        "write": 114688
+      },
+      "PhysicalDrive4": {
+        "read": 0,
+        "write": 45056
+      }
+    }
+  },
+  {
+    "phase": "unload-ram",
+    "elapsed_s": 5.938,
+    "result": {
+      "status": "unloaded",
+      "session_kept": true
+    },
+    "before": {
+      "state": "idle",
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1266.6,
+          "generated": null
+        }
+      ],
+      "physical_used": 145008222208,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 173050029056,
+          "write": 342517586432
+        },
+        "PhysicalDrive3": {
+          "read": 1672463532032,
+          "write": 80021585920
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334465024
+        }
+      }
+    },
+    "after": {
+      "state": "unloaded",
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 778773040,
+        "segments": 1142,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1266.6,
+          "generated": null
+        }
+      ],
+      "physical_used": 129865461760,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 173051395584,
+          "write": 342519135232
+        },
+        "PhysicalDrive3": {
+          "read": 1672469829632,
+          "write": 80022028288
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334493696
+        }
+      }
+    },
+    "peak_physical_used": 145647824896,
+    "disk_delta": {
+      "PhysicalDrive0": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive1": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive2": {
+        "read": 1366528,
+        "write": 1548800
+      },
+      "PhysicalDrive3": {
+        "read": 6297600,
+        "write": 442368
+      },
+      "PhysicalDrive4": {
+        "read": 0,
+        "write": 28672
+      }
+    }
+  },
+  {
+    "phase": "load-ram",
+    "elapsed_s": 26.938,
+    "result": {
+      "status": "loaded"
+    },
+    "before": {
+      "state": "unloaded",
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 778773040,
+        "segments": 1142,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1266.6,
+          "generated": null
+        }
+      ],
+      "physical_used": 129874145280,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 173051395584,
+          "write": 342519135232
+        },
+        "PhysicalDrive3": {
+          "read": 1672469829632,
+          "write": 80022028288
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334493696
+        }
+      }
+    },
+    "after": {
+      "state": "idle",
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1266.6,
+          "generated": null
+        }
+      ],
+      "physical_used": 144584613888,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 173063403008,
+          "write": 342537848832
+        },
+        "PhysicalDrive3": {
+          "read": 1672484283904,
+          "write": 80023089152
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334493696
+        }
+      }
+    },
+    "peak_physical_used": 144645263360,
+    "disk_delta": {
+      "PhysicalDrive0": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive1": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive2": {
+        "read": 12007424,
+        "write": 18713600
+      },
+      "PhysicalDrive3": {
+        "read": 14454272,
+        "write": 1060864
+      },
+      "PhysicalDrive4": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  },
+  {
+    "phase": "reuse-batch",
+    "elapsed_s": 0.877,
+    "result": [
+      {
+        "usage": {
+          "prompt_tokens": 1524,
+          "completion_tokens": 12,
+          "total_tokens": 1536,
+          "prompt_tokens_details": {
+            "cached_tokens": 1493
+          }
+        },
+        "error": null,
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "reasoning_content": "We need to respond to user: \"请记住测试编号 "
+            },
+            "finish_reason": "length"
+          }
+        ]
+      },
+      {
+        "usage": {
+          "prompt_tokens": 1524,
+          "completion_tokens": 12,
+          "total_tokens": 1536,
+          "prompt_tokens_details": {
+            "cached_tokens": 1493
+          }
+        },
+        "error": null,
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "reasoning_content": "我们需要回答用户的请求。 User Chinese: \"请记住"
+            },
+            "finish_reason": "length"
+          }
+        ]
+      }
+    ],
+    "before": {
+      "state": "idle",
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1266.6,
+          "generated": null
+        }
+      ],
+      "physical_used": 144584622080,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 173063403008,
+          "write": 342537930752
+        },
+        "PhysicalDrive3": {
+          "read": 1672484283904,
+          "write": 80023089152
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334493696
+        }
+      }
+    },
+    "after": {
+      "state": "idle",
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 266.0,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 232.8,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1266.6,
+          "generated": null
+        }
+      ],
+      "physical_used": 145074335744,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 173063403008,
+          "write": 342538004480
+        },
+        "PhysicalDrive3": {
+          "read": 1672484283904,
+          "write": 80023150592
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334493696
+        }
+      }
+    },
+    "peak_physical_used": 145122267136,
+    "disk_delta": {
+      "PhysicalDrive0": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive1": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive2": {
+        "read": 0,
+        "write": 73728
+      },
+      "PhysicalDrive3": {
+        "read": 0,
+        "write": 61440
+      },
+      "PhysicalDrive4": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  },
+  {
+    "phase": "unload-full",
+    "elapsed_s": 18.173,
+    "result": {
+      "status": "unloaded",
+      "session_kept": true
+    },
+    "before": {
+      "state": "idle",
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 266.0,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 232.8,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1266.6,
+          "generated": null
+        }
+      ],
+      "physical_used": 145081774080,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 173063403008,
+          "write": 342538004480
+        },
+        "PhysicalDrive3": {
+          "read": 1672484283904,
+          "write": 80023150592
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334493696
+        }
+      }
+    },
+    "after": {
+      "state": "unloaded",
+      "ram": {
+        "weights_bytes": 0,
+        "session_bytes": 1156255128,
+        "segments": 76,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 266.0,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 232.8,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1266.6,
+          "generated": null
+        }
+      ],
+      "physical_used": 45114822656,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 173063888384,
+          "write": 347167100928
+        },
+        "PhysicalDrive3": {
+          "read": 1672496879104,
+          "write": 80023805952
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334493696
+        }
+      }
+    },
+    "peak_physical_used": 145727082496,
+    "disk_delta": {
+      "PhysicalDrive0": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive1": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive2": {
+        "read": 485376,
+        "write": 4629096448
+      },
+      "PhysicalDrive3": {
+        "read": 12595200,
+        "write": 655360
+      },
+      "PhysicalDrive4": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  },
+  {
+    "phase": "full-already-unloaded",
+    "elapsed_s": 0.012,
+    "result": {
+      "status": "not loaded"
+    },
+    "before": {
+      "state": "unloaded",
+      "ram": {
+        "weights_bytes": 0,
+        "session_bytes": 1156255128,
+        "segments": 76,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 266.0,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 232.8,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1266.6,
+          "generated": null
+        }
+      ],
+      "physical_used": 45118668800,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 173063888384,
+          "write": 347167100928
+        },
+        "PhysicalDrive3": {
+          "read": 1672496879104,
+          "write": 80023805952
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334493696
+        }
+      }
+    },
+    "after": {
+      "state": "unloaded",
+      "ram": {
+        "weights_bytes": 0,
+        "session_bytes": 1156255128,
+        "segments": 76,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 266.0,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 232.8,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1266.6,
+          "generated": null
+        }
+      ],
+      "physical_used": 45116063744,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 173063888384,
+          "write": 347167100928
+        },
+        "PhysicalDrive3": {
+          "read": 1672496879104,
+          "write": 80023805952
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334493696
+        }
+      }
+    },
+    "peak_physical_used": 45118668800,
+    "disk_delta": {
+      "PhysicalDrive0": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive1": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive2": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive3": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive4": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  },
+  {
+    "phase": "load-after-full",
+    "elapsed_s": 69.795,
+    "result": {
+      "status": "loaded"
+    },
+    "before": {
+      "state": "unloaded",
+      "ram": {
+        "weights_bytes": 0,
+        "session_bytes": 1156255128,
+        "segments": 76,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 266.0,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 232.8,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1266.6,
+          "generated": null
+        }
+      ],
+      "physical_used": 45114724352,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 173063888384,
+          "write": 347167100928
+        },
+        "PhysicalDrive3": {
+          "read": 1672496879104,
+          "write": 80023805952
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334493696
+        }
+      }
+    },
+    "after": {
+      "state": "idle",
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 266.0,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 232.8,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1266.6,
+          "generated": null
+        }
+      ],
+      "physical_used": 144213069824,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 174721887232,
+          "write": 347179223552
+        },
+        "PhysicalDrive3": {
+          "read": 1754838797312,
+          "write": 80025735168
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334493696
+        }
+      }
+    },
+    "peak_physical_used": 144282079232,
+    "disk_delta": {
+      "PhysicalDrive0": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive1": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive2": {
+        "read": 1657998848,
+        "write": 12122624
+      },
+      "PhysicalDrive3": {
+        "read": 82341918208,
+        "write": 1929216
+      },
+      "PhysicalDrive4": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  },
+  {
+    "phase": "reuse-after-full",
+    "elapsed_s": 0.224,
+    "result": {
+      "usage": {
+        "prompt_tokens": 1524,
+        "completion_tokens": 12,
+        "total_tokens": 1536,
+        "prompt_tokens_details": {
+          "cached_tokens": 1519
+        }
+      },
+      "error": null,
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "reasoning_content": "We need to respond to user: \"请记住测试编号 "
+          },
+          "finish_reason": "length"
+        }
+      ]
+    },
+    "before": {
+      "state": "idle",
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 266.0,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 232.8,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1266.6,
+          "generated": null
+        }
+      ],
+      "physical_used": 144213049344,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 174721891840,
+          "write": 347179256832
+        },
+        "PhysicalDrive3": {
+          "read": 1754838797312,
+          "write": 80025735168
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334493696
+        }
+      }
+    },
+    "after": {
+      "state": "idle",
+      "ram": {
+        "weights_bytes": 83976213228,
+        "session_bytes": 0,
+        "segments": 1090,
+        "locked": true,
+        "error": null
+      },
+      "requests": [
+        {
+          "prompt_tokens": 1524,
+          "reused": 1519,
+          "prompt_ms": 73.8,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 266.0,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 1493,
+          "prompt_ms": 232.8,
+          "generated": null
+        },
+        {
+          "prompt_tokens": 1524,
+          "reused": 0,
+          "prompt_ms": 1202.7,
+          "generated": null
+        }
+      ],
+      "physical_used": 144141934592,
+      "disks": {
+        "PhysicalDrive0": {
+          "read": 15284808704,
+          "write": 4904136704
+        },
+        "PhysicalDrive1": {
+          "read": 103072768,
+          "write": 48132096
+        },
+        "PhysicalDrive2": {
+          "read": 174721891840,
+          "write": 347179256832
+        },
+        "PhysicalDrive3": {
+          "read": 1754838797312,
+          "write": 80025735168
+        },
+        "PhysicalDrive4": {
+          "read": 648295424,
+          "write": 334493696
+        }
+      }
+    },
+    "peak_physical_used": 144213049344,
+    "disk_delta": {
+      "PhysicalDrive0": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive1": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive2": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive3": {
+        "read": 0,
+        "write": 0
+      },
+      "PhysicalDrive4": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  }
+]

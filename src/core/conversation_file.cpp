@@ -1,4 +1,5 @@
 #include "strata/core/conversation_file.hpp"
+#include "strata/platform/windows_shared_memory.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -164,6 +165,52 @@ std::string last_error(DWORD code = GetLastError()) {
 class RawFile {
 public:
     ~RawFile() { close(); }
+    bool create_memory(const std::string& path, uint64_t size) {
+        memory_ = path.substr(4); memory_size_ = size;
+        root_ = strata::platform::winmem::region(memory_, 4096, "session");
+        if (!root_->fresh) { error_ = "session memory already exists"; return false; }
+        auto* h = (strata::platform::winmem::Header*) root_->data;
+        *h = {strata::platform::winmem::magic, size, 0, 0};
+        return true;
+    }
+    void publish_memory() {
+        if (root_) { MemoryBarrier(); ((strata::platform::winmem::Header*) root_->data)->ready = 1; }
+    }
+    bool verify_memory_payload(uint64_t payload) {
+        if (memory_.empty()) return true;
+        // Validate once without allocations before the consuming parse. A corrupt/truncated memory
+        // snapshot must not discard its chunks or install a partially validated conversation.
+        SessionHasher hash(0);
+        uint64_t done = 0;
+        while (done < payload) {
+            const uint64_t at = kHeader + done, index = at / kBlock, off = at % kBlock;
+            const uint64_t len = std::min<uint64_t>(kBlock, memory_size_ - index * kBlock);
+            auto r = strata::platform::winmem::region(memory_ + "-p" + std::to_string(index), len, "session", false);
+            const size_t c = (size_t) std::min<uint64_t>(len - off, payload - done);
+            hash.update(r->data + off, c); done += c;
+        }
+        uint8_t trailer[kTrailer];
+        const uint64_t old = at_; at_ = kHeader + payload;
+        const long long first = read_some(trailer, kTrailer);
+        const long long rest = first >= 0 && first < kTrailer ? read_some(trailer + first, kTrailer - (size_t) first) : 0;
+        at_ = old;
+        uint64_t digest = 0; std::memcpy(&digest, trailer, 8);
+        if (first < 0 || first + rest != kTrailer || digest != hash.digest() || std::memcmp(trailer + 8, kEnd, 8)) {
+            error_ = "RAM session checksum/end marker mismatch"; return false;
+        }
+        return true;
+    }
+    void consume_memory() {
+        if (memory_.empty()) return;
+        consuming_ = true;
+        // FileSource already holds the initial block (including the header) in its 16 MiB buffer.
+        for (uint64_t i = 0; (i + 1) * kBlock <= at_; ++i) drop_part(i);
+    }
+    void drop_part(uint64_t index) {
+        const std::string part = memory_ + "-p" + std::to_string(index);
+        strata::platform::winmem::forget(part);
+        std::printf("MEMDROP %s\n", part.c_str()); std::fflush(stdout);
+    }
     // a new file that did not exist (CREATE_NEW: never an existing file or link)
     bool create_new(const std::wstring& path) {
         h_ = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
@@ -174,6 +221,16 @@ public:
     // a session to restore: the name itself is opened, never what a link or reparse point there points to; it must be
     // an ordinary disk file with one name
     bool open_session(const std::string& path, uint64_t& size) {
+        if (path.rfind("mem:", 0) == 0) {
+            memory_ = path.substr(4);
+            root_ = strata::platform::winmem::region(memory_, 4096, "session", false);
+            const auto* h = (const strata::platform::winmem::Header*) root_->data;
+            if (h->magic != strata::platform::winmem::magic || h->ready != 1) {
+                error_ = "incomplete session memory"; return false;
+            }
+            memory_size_ = size = h->bytes;
+            return true;
+        }
         std::wstring w;
         if (!wide(path, w)) { refused_ = true; error_ = "the path is not valid UTF-8"; return false; }
         h_ = CreateFileW(w.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
@@ -208,9 +265,20 @@ public:
         size = (uint64_t) s.QuadPart;
         return true;
     }
-    bool is_open() const { return h_ != INVALID_HANDLE_VALUE; }
+    bool is_open() const { return !memory_.empty() || h_ != INVALID_HANDLE_VALUE; }
     bool direct() const { return false; }
     bool write_all(const uint8_t* p, size_t n) {
+        if (!memory_.empty()) {
+            if (at_ > memory_size_ || n > memory_size_ - at_) { error_ = "session memory overflow"; return false; }
+            while (n) {
+                const uint64_t index = at_ / kBlock, off = at_ % kBlock;
+                const uint64_t length = std::min<uint64_t>(kBlock, memory_size_ - index * kBlock);
+                auto r = strata::platform::winmem::region(memory_ + "-p" + std::to_string(index), length, "session");
+                const size_t c = std::min<size_t>(n, (size_t) (length - off));
+                std::memcpy(r->data + off, p, c); at_ += c; p += c; n -= c;
+            }
+            return true;
+        }
         while (n) {
             DWORD w = 0;
             const DWORD want = (DWORD) std::min<size_t>(n, size_t(1) << 30);
@@ -221,6 +289,16 @@ public:
     }
     // bytes read, 0 at the end of the file, -1 on error
     long long read_some(uint8_t* p, size_t n) {
+        if (!memory_.empty()) {
+            if (at_ >= memory_size_) return 0;
+            const uint64_t index = at_ / kBlock, off = at_ % kBlock;
+            const uint64_t length = std::min<uint64_t>(kBlock, memory_size_ - index * kBlock);
+            auto r = strata::platform::winmem::region(memory_ + "-p" + std::to_string(index), length, "session", false);
+            const size_t c = std::min<size_t>(n, (size_t) (length - off));
+            std::memcpy(p, r->data + off, c); at_ += c;
+            if (consuming_ && (at_ % kBlock == 0 || at_ == memory_size_)) drop_part(index);
+            return (long long) c;
+        }
         DWORD r = 0;
         if (!ReadFile(h_, p, (DWORD) std::min<size_t>(n, size_t(1) << 30), &r, nullptr)) {
             { const DWORD c_ = GetLastError(); kind_ = win_kind(c_); error_ = last_error(c_); }
@@ -247,6 +325,7 @@ public:
         return false;
     }
     bool sync() {
+        if (!memory_.empty()) return true;
         if (FlushFileBuffers(h_)) return true;
         { const DWORD c_ = GetLastError(); kind_ = win_kind(c_); error_ = last_error(c_); }
         return false;
@@ -264,6 +343,10 @@ public:
     // a validation refusal (a link, not a regular file, ...): bad input, not an I/O failure
     bool refused() const { return refused_; }
 private:
+    std::string memory_;
+    uint64_t memory_size_ = 0, at_ = 0;
+    bool consuming_ = false;
+    std::shared_ptr<strata::platform::winmem::Region> root_;
     HANDLE h_ = INVALID_HANDLE_VALUE;
     SessionError kind_ = SessionError::io;
     bool refused_ = false;
@@ -1040,7 +1123,11 @@ bool write_impl(const std::string& path, const SavedConversation& image, const s
     }
     const uint64_t payload = sizing.n, total = kHeader + payload + kTrailer;
     st.error = SessionError::io;
-    if (opt.min_free_bytes) {
+    bool memory = false;
+#ifdef _WIN32
+    memory = path.rfind("mem:", 0) == 0;
+#endif
+    if (!memory && opt.min_free_bytes) {
         uint64_t avail = 0;
         if (!free_space(path, avail)) { error = "session file: cannot read the free disk space for " + path; return false; }
         if (avail < total || avail - total < opt.min_free_bytes) {
@@ -1052,12 +1139,19 @@ bool write_impl(const std::string& path, const SavedConversation& image, const s
         }
     }
     Publisher pub;
-    if (!pub.open(path, error)) { st.error = pub.kind(); return false; }
     RawFile raw;
+#ifdef _WIN32
+    if (memory) {
+        if (!raw.create_memory(path, total)) { error = raw.error(); st.error = raw.kind(); return false; }
+    } else
+#endif
+    {
+    if (!pub.open(path, error)) { st.error = pub.kind(); return false; }
     if (!pub.create_temp(raw, error)) {
         st.error = raw.kind();
         error = "session file: cannot create a temporary file beside " + path + ": " + error;
         return false;
+    }
     }
     FileSink f(raw);
     if (!f.ok()) { st.error = SessionError::memory; error = "session file: " + f.error(); return false; }
@@ -1081,13 +1175,20 @@ bool write_impl(const std::string& path, const SavedConversation& image, const s
         const uint64_t ph = hash.digest();
         ok = f.write(&ph, 8) && f.write(kEnd, 8);
     }
-    ok = f.finish(opt.durable) && ok;
+    ok = f.finish(!memory && opt.durable) && ok;
     std::string why;
     if (!ok) {
         why = out.read_failed ? "K/V source read" + (out.read_error.empty() ? std::string() : ": " + out.read_error)
                               : f.error();
         st.error = out.read_failed ? SessionError::io : f.kind();
     } else {
+#ifdef _WIN32
+        if (memory) {
+            raw.publish_memory(); bytes = (size_t) total;
+            st.error = SessionError::none; st.published = true;
+            return true;
+        }
+#endif
         if (opt.phase) opt.phase("publish", total);
         if (pub.publish(why, opt.durable, st, fault)) {
             st.error = SessionError::none;
@@ -1221,6 +1322,10 @@ bool read_impl(const std::string& path, const SessionFileIdentity& id, SavedConv
             return false;
         }
     }
+#ifdef _WIN32
+    if (!raw.verify_memory_payload(payload)) { error = raw.error(); return false; }
+    raw.consume_memory();
+#endif
     SavedConversation parsed;
     In in{&f, SessionHasher(0), payload, error, limits};
     if (!get_payload(in, parsed)) { st.error = in.kind; return false; }

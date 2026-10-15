@@ -84,5 +84,6 @@
   }
  ],
  "vram_elastic": true,
- "unload_session_memory": true
+ "unload_session_memory": true,
+ "shared_expert_arena": "mem:auto"
 }

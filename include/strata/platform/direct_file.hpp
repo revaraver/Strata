@@ -28,6 +28,9 @@ public:
     DirectFile& operator=(const DirectFile&) = delete;
 
     bool open(const std::string& path, std::string& err);
+#ifdef _WIN32
+    bool retain_range(const std::string& path, uint64_t offset, uint64_t bytes, std::string& err);
+#endif
     void close();
     bool is_open() const;
     uint64_t size() const;
