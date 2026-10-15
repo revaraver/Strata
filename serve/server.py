@@ -57,12 +57,13 @@ from urllib.parse import parse_qs, urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT))   # run as a script (run-<model>.bat) as well as a module
-from serve.frontend import (THINK_END, ChatTemplate, Event, OutputParser, anthropic_to_messages,  # noqa: E402
+from serve.frontend import (THINK_END, ChatTemplate, EFFORT, Event, OutputParser, anthropic_to_messages,  # noqa: E402
                             forced_call, images_of, literal_tags, mark_think_literals, openai_to_messages,
                             tool_choice_of, unmark_think_literals)
 from serve.mcp import McpCancelled, hub_from_config  # noqa: E402
 from serve import runconfig  # noqa: E402
 from serve import logit_bias as bias_api  # noqa: E402
+from serve.reasoning_translation import TranslationManager, background_events  # noqa: E402
 from serve.winjob import contain  # noqa: E402
 from serve.structured import StructuredOutputError, prepare_format, validated_json  # noqa: E402
 from serve import responses as responses_api  # noqa: E402
@@ -3031,11 +3032,13 @@ class Service:
         self.literals = literal_tags(getattr(tokenizer, "control_tokens", ()))   # texts that stay text inside a message
         self.fit_max_tokens = fit_max_tokens          # --fit-max-tokens: clamp the output cap instead of 400
         self.aliases: list[str] = []                  # #297: other names of the model (the config's `aliases`)
+        self.model_profiles: dict[str, dict] = {}     # 分身模型: same engine, per-name thinking policy
         self.reasoning_close_retry = False            # #1053 (opt-in): close the thinking once when a reply ends inside it
         self.codex_compaction_cache = False           # #924 (opt-in): a Codex compaction is rendered with its conversation's tools
         self.codex_thread_titles = False              # #923 (opt-in): answer Codex's thread-title turns without the engine
         self.sampling_defaults = dict(sampling_defaults or {})   # the run config's `sampling` block
         self.shared = {}                              # the web app's Chat settings for every client (POST /settings)
+        self.reasoning_translation = None             # optional outgoing-only CPU translation, separate JSON
         self.shared_path = None                       # where they are kept between starts (next to the config)
         self.config_effort = None                     # #1641: the config's "reasoning_effort": the level for requests with none
         self.keep_awake = None                        # #1727 (opt-in): serve.keepawake.KeepAwake, the config's "prevent_sleep"
@@ -3049,6 +3052,9 @@ class Service:
         self.conv_log = ConvCacheLog()                  # #596: the parked conversations, from the engine's log
         self.config_path = None                         # #564: the run config the web page's Settings view edits
         self.config_lock = threading.Lock()
+        self.config_startup_values = None               # restart-only settings actually loaded by this process
+        self._idle_unload_thread = None
+        self._idle_unload_wake = threading.Event()
         # #321: browser pages of these origins may call /v1/* (CORS; "*" = any page - only with an api_key that
         # matters); empty = no CORS headers at all, as before
         self.cors_origins: list[str] = []
@@ -3176,6 +3182,45 @@ class Service:
         return 200, {"id_slot": 0, "filename": filename, "n_restored": r["tokens"], "n_read": r["bytes"],
                      "timings": {"restore_ms": r["ms"]}}
 
+    def config_view(self, cfg: dict) -> dict:
+        """Called under config_lock; remember the startup settings before the first write."""
+        if self.config_startup_values is None:
+            self.config_startup_values = runconfig.restart_values(cfg)
+        return runconfig.view(cfg, self.config_path, self.config_startup_values)
+
+    def apply_hot_config(self, cfg: dict, changed: list[str]) -> list[str]:
+        """Apply only saved, validated runtime fields; never reload the engine or touch its cached sessions."""
+        hot = [key for key in changed if key in runconfig.HOT_KEYS]
+        sampling = dict(self.sampling_defaults)
+        for key in hot:
+            value = runconfig.value_of(cfg, key)
+            if key.startswith("sampling."):
+                sub = key.split(".", 1)[1]
+                if value is None:
+                    sampling.pop(sub, None)
+                else:
+                    sampling[sub] = value
+            elif key == "reasoning_budget_tokens":
+                self.reasoning_budget_tokens = value or 0
+            elif key == "fit_max_tokens":
+                self.fit_max_tokens = value is True
+            elif key == "anthropic_thinking":
+                self.anthropic_think_unasked = (value or "model") == "model"
+            elif key == "aliases":
+                self.set_aliases(value)
+            elif key == "model_profiles":
+                self.set_model_profiles(value)
+            elif key == "idle_unload_s":
+                self.idle_unload_s = float(value or 0)
+                self.start_idle_unload()
+            elif key == "engine_silence_s":
+                self.engine.silence_s = engine_silence_s(cfg)
+            elif key == "api_monitor":
+                self.api_monitor = value is True
+        if any(key.startswith("sampling.") for key in hot):
+            self.sampling_defaults = sampling
+        return hot
+
     def set_aliases(self, aliases) -> None:
         """#297: the config's `aliases` - a list of names (or one comma-separated string), like llama-server's --alias.
         ValueError for anything else."""
@@ -3191,14 +3236,68 @@ class Service:
                 names.append(x)
         self.aliases = names
 
+    def set_model_profiles(self, profiles) -> None:
+        """分身模型: extra names for this same loaded model, each with its own thinking policy - a list of
+        {"name": ..., "thinking": "off"|"on"|None, "reasoning_effort": ..., "reasoning_budget_tokens": int}.
+        An explicit setting overrides the client and the shared settings; absent fields inherit, exactly like
+        plain aliases do (which stay a separate feature).  ValueError for anything else; a name must not
+        collide with the model's own name or an alias."""
+        if profiles is None:
+            self.model_profiles = {}
+            return
+        if not isinstance(profiles, list):
+            raise ValueError(f"model_profiles={profiles!r}: expected a list of profile objects")
+        out = {}
+        for i, p in enumerate(profiles):
+            if not isinstance(p, dict):
+                raise ValueError(f"model_profiles[{i}]={p!r}: expected an object")
+            name = p.get("name")
+            if not isinstance(name, str) or not name.strip() or len(name.strip()) > 128:
+                raise ValueError(f"model_profiles[{i}]: name must be a model name of 1..128 characters")
+            name = name.strip()
+            if name == self.model or name in self.aliases or name in out:
+                raise ValueError(f"model_profiles[{i}]: {name!r} collides with the model's name, an alias or another profile")
+            thinking = p.get("thinking")
+            if thinking not in (None, "inherit", "off", "on"):
+                raise ValueError(f"model_profiles[{i}]: thinking must be off, on or inherit; got {thinking!r}")
+            effort = p.get("reasoning_effort")
+            if effort is not None:
+                key = str(effort).strip().lower()
+                if key not in EFFORT:
+                    raise ValueError(f"model_profiles[{i}]: unknown reasoning_effort {effort!r}")
+                if EFFORT[key] is None:
+                    thinking = "off"
+                else:
+                    effort = {"low": "low", "medium": "medium"}.get(EFFORT[key], "high")
+            budget = p.get("reasoning_budget_tokens")
+            if budget is not None:
+                if isinstance(budget, float) and budget.is_integer():
+                    budget = int(budget)
+                if isinstance(budget, bool) or not isinstance(budget, int) or budget < 0:
+                    raise ValueError(f"model_profiles[{i}]: reasoning_budget_tokens must be a whole number >= 0")
+            prof = {"name": name}
+            if thinking in ("off", "on"):
+                prof["thinking"] = thinking
+            if effort is not None and thinking != "off":
+                prof["reasoning_effort"] = effort
+            if budget is not None and thinking != "off":
+                prof["reasoning_budget_tokens"] = budget
+            out[name] = prof
+        self.model_profiles = out
+
+    def profile_for(self, req) -> dict | None:
+        """The 分身 a request asks for by model name, or None (the base model / an alias / an unknown name)."""
+        asked = req.get("model") if isinstance(req, dict) else None
+        return self.model_profiles.get(asked) if isinstance(asked, str) else None
+
     def model_names(self) -> list[str]:
-        return [self.model, *self.aliases]
+        return [self.model, *self.aliases, *self.model_profiles]
 
     def model_for(self, req) -> str:
-        """The name to answer with: the request's own when it is the model's name or an alias (#297), else the model's.
-        Other names are still served, as before."""
+        """The name to answer with: the request's own when it is the model's name, an alias or a 分身 (#297), else
+        the model's.  Other names are still served, as before."""
         asked = req.get("model") if isinstance(req, dict) else None
-        return asked if isinstance(asked, str) and asked in self.aliases else self.model
+        return asked if isinstance(asked, str) and (asked in self.aliases or asked in self.model_profiles) else self.model
 
     def reported_ctx(self) -> int:
         """The context the endpoints report (/v1/status, /v1/models, /props, /health, /slots, /metrics): the engine's,
@@ -3211,6 +3310,9 @@ class Service:
         config's.  0 (or less) means no budget, so a request can turn a configured one off.  ValueError (a 400) for
         anything that is not a whole number."""
         value = (req or {}).get("reasoning_budget_tokens") if isinstance(req, dict) else None
+        profile = self.profile_for(req)
+        if profile is not None and profile.get("reasoning_budget_tokens") is not None:
+            value = profile["reasoning_budget_tokens"]      # the 分身's cap wins over the client
         if value is None:
             value = self.reasoning_budget_tokens
         if isinstance(value, float) and value.is_integer():
@@ -3509,18 +3611,33 @@ class Service:
             self.fifo.release()
 
     def start_idle_unload(self):
-        if not self.idle_unload_s or not hasattr(self.engine, "unload"):
+        """Start one watcher, or wake it when a hot change enables/disables/reschedules idle unloading."""
+        if not hasattr(self.engine, "unload"):
+            return
+        self._idle_unload_wake.set()
+        if self._idle_unload_thread is not None and self._idle_unload_thread.is_alive():
+            return
+        if not self.idle_unload_s:
             return
         print(f"[strata] the model unloads after {self.idle_unload_s} s without requests", flush=True)
 
         def loop():
             while True:
-                time.sleep(max(1.0, min(30.0, self.idle_unload_s / 4)))
+                seconds = self.idle_unload_s
+                # A disabled watcher sleeps until another save enables it; it never unloads with idle_for=0.
+                woke = self._idle_unload_wake.wait(max(1.0, min(30.0, seconds / 4)) if seconds else None)
+                self._idle_unload_wake.clear()
+                if woke:
+                    continue
                 try:
-                    self.unload(idle_for=self.idle_unload_s)
+                    with self.config_lock:
+                        seconds = self.idle_unload_s
+                        if seconds:
+                            self.unload(idle_for=seconds)
                 except EngineStuck as e:                # tried again at the next turn; the thread keeps running
                     print(f"[strata] idle unload: {e}", flush=True)
-        threading.Thread(target=loop, daemon=True).start()
+        self._idle_unload_thread = threading.Thread(target=loop, daemon=True)
+        self._idle_unload_thread.start()
 
     def set_shared(self, defaults) -> dict:
         """The Chat settings every client gets for what it leaves out; {} / None = clients use their own again."""
@@ -3541,12 +3658,35 @@ class Service:
         return self.shared.get("reasoning_effort") or self.config_effort
 
     def with_shared(self, req: dict, api: str) -> dict:
-        """The request with the shared thinking level and max tokens filled in where it has none of its own."""
+        """The request with the shared thinking level and max tokens filled in where it has none of its own.
+        A 分身's explicit thinking setting overrides both the client and the shared settings."""
+        p = self.profile_for(req)
         s = self.shared
         effort = self.effort_default()
-        if not s and not effort:
+        if not s and not effort and p is None:
             return req
         req = dict(req)
+        if p is not None:
+            effort = "none" if p.get("thinking") == "off" else p.get("reasoning_effort")
+            if effort is not None:
+                if api == "openai":
+                    req["reasoning_effort"] = effort
+                    req.pop("reasoning", None)
+                    ctk = req.get("chat_template_kwargs")
+                    if isinstance(ctk, dict):
+                        ctk = {k: v for k, v in ctk.items() if k not in ("enable_thinking", "reasoning_effort")}
+                        if ctk:
+                            req["chat_template_kwargs"] = ctk
+                        else:
+                            req.pop("chat_template_kwargs")
+                elif effort == "none":
+                    req["thinking"] = {"type": "disabled"}
+                    req.pop("output_config", None)
+                else:
+                    req["output_config"] = {"effort": effort}
+                    req.pop("thinking", None)
+        if not s and not effort:
+            return req
         if "max_tokens" in s and not req.get("max_tokens") and not req.get("max_completion_tokens"):
             req["max_tokens"] = s["max_tokens"]
         if effort:
@@ -3692,6 +3832,7 @@ class Service:
         tel = self.telemetry.snapshot() if getattr(self, "telemetry", None) else {"now": {}, "history": {}, "static": {}}
         parked = self.conv_log.poll(getattr(self.engine, "log_path", None), getattr(self.engine, "log_start", None))
         return {"engine": engine, "live": live, "requests": hist[::-1][:None if all_requests else 12],
+                **({"reasoning_translation": self.reasoning_translation.status()} if self.reasoning_translation else {}),
                 "conversation_cache": conversation_cache_view(engine, hist, totals, parked),
                 "requests_kept": len(hist), "totals": totals, "hardware": tel["now"],
                 "hardware_static":
@@ -3792,6 +3933,8 @@ class Service:
         message's text is encoded as the text it is, not as the model's reasoning markers (the template's own are).
         A control token's text (<|im_start|>, <|im_end|>, <|endoftext|>, ...) inside a message is text as well: only
         the control tokens the template writes are control tokens."""
+        if self.reasoning_translation is not None:
+            messages = self.reasoning_translation.restore_messages(messages)
         marked, marked_tools, changed = mark_think_literals(messages, tools, self.literals)
         prompt = self.render_prompt(marked, marked_tools, kwargs)
         if not changed:
@@ -4061,6 +4204,28 @@ class Service:
             print(f"[strata] {s['phase']}: {s['generated']} of {limit} tokens, {rate:.1f} tok/s, "
                   f"{el:.0f} s", flush=True)
         return now
+
+    def outgoing(self, source, cancel):
+        """Translate reasoning after native generation/MCP history, before the API's framing."""
+        if self.reasoning_translation is None:
+            yield from source
+        else:
+            # Transfer request-local image ownership and monitoring context from
+            # the HTTP handler to the independent native generation thread.
+            embeddings = getattr(self.embeddings, "path", None)
+            trace = getattr(self.request_trace, "record", None)
+            self.embeddings.path = None
+
+            def enter():
+                self.embeddings.path = embeddings
+                self.request_trace.record = trace
+
+            def leave():
+                self.drop_embeddings()
+                self.request_trace.record = None
+
+            native = background_events(source, cancel, enter, leave)
+            yield from self.reasoning_translation.wrap(native, cancel)
 
     def run(self, ids, thinking, tools, max_new, sampling, cancel, force=None) -> Iterator[tuple[str, object]]:
         """The request's events (see _run); with "prevent_sleep" in the config, the PC stays awake while it runs or waits."""
@@ -4750,7 +4915,8 @@ def openai_chunks(svc: Service, req: dict, ids, thinking, tools, max_new, cancel
     calls = 0
     streamed = {}                                  # tool call id -> index, for calls sent piece by piece
     finished = set()                               # ... and the ones whose final tool_call came (#211)
-    for kind, x in run if run is not None else svc.run(ids, thinking, tools, max_new, req, cancel, force=force):
+    source = run if run is not None else svc.run(ids, thinking, tools, max_new, req, cancel, force=force)
+    for kind, x in svc.outgoing(source, cancel):
         if kind == "ping":
             # a PP line: the prompt is being read and there is nothing to say yet.  It used to be only the SSE comment;
             # now it carries the progress when the client asked, and stays the comment when there is nothing to report.
@@ -4876,7 +5042,7 @@ def anthropic_events(svc: Service, req: dict, ids, thinking, tools, max_new, can
         return ("content_block_stop", {"type": "content_block_stop", "index": index})
 
     streamed, finished = set(), set()              # calls sent piece by piece; those whose final tool_call came (#211)
-    for kind, x in svc.run(ids, thinking, tools, max_new, req, cancel, force=force):
+    for kind, x in svc.outgoing(svc.run(ids, thinking, tools, max_new, req, cancel, force=force), cancel):
         if kind == "ping":
             yield None
             continue
@@ -5378,7 +5544,10 @@ def make_handler(svc: Service):
                         loaded = True
                     if svc.aliases:                       # #297: the aliases, and each one listed under its own id
                         model["aliases"] = list(svc.aliases)
-                    data = [model, *({**model, "id": x, "alias_of": svc.model} for x in svc.aliases)]
+                    data = [model, *({**model, "id": x, "alias_of": svc.model} for x in svc.aliases),
+                            *({**model, "id": x, "alias_of": svc.model,
+                               "profile": {k: v for k, v in pr.items() if k != "name"}}
+                              for x, pr in svc.model_profiles.items())]   # 分身: same engine, own thinking policy
                     data = data if loaded else []
                     if svc.images is not None:            # the image model: POST /v1/images/generations
                         data.append({"id": svc.images.model, "object": "model", "status": {"value": "loaded"},
@@ -5683,11 +5852,13 @@ def make_handler(svc: Service):
                 self._json(404, {"error": {"message": "this server was started without a run config"}})
                 return
             try:
-                cfg = runconfig.load(svc.config_path)
+                with svc.config_lock:
+                    cfg = runconfig.load(svc.config_path)
+                    view = svc.config_view(cfg)
             except (OSError, ValueError) as e:
                 self._json(500, {"error": {"type": "server_error", "message": f"the run config cannot be read: {e}"}})
                 return
-            self._json(200, runconfig.view(cfg, svc.config_path))
+            self._json(200, view)
 
         def _config_post(self):
             """#564: change a few documented keys of the run config - JSON from Strata's own page only, as
@@ -5703,8 +5874,12 @@ def make_handler(svc: Service):
                 with svc.config_lock:
                     cfg = runconfig.load(svc.config_path)
                     new, changed = runconfig.apply(cfg, req.get("set") if isinstance(req, dict) else None)
+                    svc.config_view(cfg)                 # capture what this process started with before saving
                     if changed:
                         bak = runconfig.save(svc.config_path, new)
+                    hot = svc.apply_hot_config(new, changed)
+                    restart = [key for key in changed if key not in runconfig.HOT_KEYS]
+                    view = svc.config_view(new)
             except ValueError as e:
                 self._json(400, {"error": {"type": "invalid_request_error", "message": str(e)}})
                 return
@@ -5712,9 +5887,10 @@ def make_handler(svc: Service):
                 self._json(500, {"error": {"type": "server_error", "message": f"the run config cannot be written: {e}"}})
                 return
             if changed:
-                print(f"[strata] the Settings view changed {', '.join(changed)} in {Path(svc.config_path).name} "
-                      f"(the earlier file: {bak.name}); used from the next start", flush=True)
-            self._json(200, {**runconfig.view(new, svc.config_path), "changed": changed})
+                print(f"[strata] 设置已保存到 {Path(svc.config_path).name}（备份：{bak.name}）；"
+                      f"已热生效：{', '.join(hot) or '无'}；待重启生效："
+                      f"{', '.join(view['restart_pending']) or '无'}", flush=True)
+            self._json(200, {**view, "changed": changed, "hot_applied": hot, "restart_required": restart})
         def _foreign_origin(self) -> bool:
             """A web page of another origin sent this.  The Origin must be this server's own address (host and port),
             or an origin the config trusts (trusted_origins: the web app behind a reverse proxy or tunnel); no Origin
@@ -5913,7 +6089,7 @@ def make_handler(svc: Service):
             def events():
                 yield from asm.start()
                 done = None
-                for kind, x in svc.run(ids, thinking, tools, max_new, req, cancel):
+                for kind, x in svc.outgoing(svc.run(ids, thinking, tools, max_new, req, cancel), cancel):
                     if kind == "ping":
                         yield None
                     elif kind == "event":
@@ -5982,7 +6158,8 @@ def make_handler(svc: Service):
             responses_api.check_request(req)
             messages = responses_api.input_messages(req)
             tools, names, skipped = responses_api.request_tools(req)
-            kw = responses_api.template_kwargs(req, {"reasoning_effort": svc.effort_default()})
+            kw = responses_api.template_kwargs(req, {**svc.shared, "reasoning_effort": svc.effort_default()},
+                                            svc.profile_for(req))
             try:
                 self._no_local_images(messages)              # as on the chat route: no file read for a foreign page
             except ValueError as e:
@@ -6632,6 +6809,8 @@ def main() -> int:
                     help="the mock engine's answer (default: a short greeting); given more than once, requests get "
                          "them in turn and the last one repeats")
     ap.add_argument("--port", type=int, default=8095)
+    ap.add_argument("--translation-config", default=str(ROOT / "reasoning-translation.json"),
+                    help="optional CPU reasoning translation JSON (watched live; clients keep this server's port)")
     ap.add_argument("--gpu", help="the GPU to run on, as nvidia-smi numbers them, or several for a layer split "
                                   "(\"0,2\"; also \"gpu\" in the config)")
     ap.add_argument("--tokenizer", default=str(ROOT / "pack/full/tokenizer"),
@@ -6671,6 +6850,8 @@ def main() -> int:
     lift_reasoning_effort_arg(cfg)
     if a.replicas is not None:
         cfg["replicas"] = a.replicas
+    translation = TranslationManager(a.translation_config)
+    translation.start()  # load the CPU translator alongside the native engine, tied to this process's lifetime
     if a.gpu is not None:
         cfg["gpu"] = int(a.gpu) if a.gpu.strip().isdigit() else a.gpu
     a.host = a.host or cfg.get("host") or "127.0.0.1"   # issue #26: the run scripts pass no --host, the config can
@@ -6795,7 +6976,8 @@ def main() -> int:
             raise SystemExit(f"[strata] config {e}")
         if svc.config_effort:
             print(f"[strata] thinking level: {svc.config_effort} (reasoning_effort in the config; a request, or the "
-                  "Chat settings shared with other apps, can set its own)", flush=True)
+                  "Chat settings shared with other apps, can set its own", flush=True)
+    svc.reasoning_translation = translation
     svc.codex_thread_titles = cfg.get("codex_thread_titles") is True    # #923: opt-in, off by default
     svc.codex_compaction_cache = cfg.get("codex_compaction_cache") is True   # #924: opt-in, off by default
     try:
@@ -6804,6 +6986,12 @@ def main() -> int:
         raise SystemExit(f"[strata] config {e}")
     if svc.aliases:
         print(f"[strata] model aliases: {', '.join(svc.aliases)}", flush=True)
+    try:
+        svc.set_model_profiles(cfg.get("model_profiles"))   # 分身模型: same engine, per-name thinking policy
+    except ValueError as e:
+        raise SystemExit(f"[strata] config {e}")
+    if svc.model_profiles:
+        print(f"[strata] 分身模型: {', '.join(svc.model_profiles)}", flush=True)
     if ("STRATA_API_KEY" in os.environ and not os.environ["STRATA_API_KEY"].strip()) or             any(x == "--api-key" and i + 1 < len(sys.argv) and not sys.argv[i + 1].strip() or x.strip() == "--api-key="
                 for i, x in enumerate(sys.argv)):
         # #213: an empty key would switch authentication off without a word
@@ -6899,6 +7087,7 @@ def main() -> int:
     svc.backend = cfg.get("backend")                    # "hip": the AMD cards' readings come from sysfs (#301)
     if a.config:
         svc.config_path = a.config                      # #564: the web page's Settings view
+        svc.config_startup_values = runconfig.restart_values(cfg)
     if a.config:                                        # the Chat settings shared with other apps, from last time
         svc.shared_path = str(Path(a.config).with_suffix("")) + ".shared-settings.json"
         try:
@@ -6955,7 +7144,7 @@ def main() -> int:
             time.sleep(1)                               # Windows never delivers Ctrl+C to an untimed Event.wait()
     except KeyboardInterrupt:
         print("\n[strata] stopping (Ctrl+C again to end the engine at once) ...", flush=True)
-        closers = [httpd.shutdown, getattr(engine, "close", None), vision.shutdown if vision else None,
+        closers = [httpd.shutdown, translation.close, getattr(engine, "close", None), vision.shutdown if vision else None,
                    hub.close if hub is not None else None]
         for close in filter(None, closers):
             try:

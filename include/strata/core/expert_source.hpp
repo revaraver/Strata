@@ -680,10 +680,11 @@ public:
     /// False when the view could not be mapped again: then the file tier stays unbuffered, `why` says so.
     bool end_startup_unbuffered(std::string& why);
     bool startup_unbuffered() const { return startup_ub_; }
+    bool startup_prefetch_available() const { return staged(); }
     /// Every expert's bytes (n_layers x n_expert blobs).
     uint64_t expert_bytes() const;
-    /// #286, unbuffered: assembles the blobs of these pairs ahead of the `blob` calls that will ask for them (the
-    /// GPU cache's fill from the profile) - one batch of reads instead of one blob at a time.  At most 64 pairs.
+    /// Assembles up to 64 staged native GGUF or unbuffered blobs ahead of the startup GPU cache fill.
+    /// Windows mapped reads use range prefetch and bounded parallel assembly.
     void prefetch_pairs(const std::pair<int32_t, int32_t>* pairs, int64_t n);
     /// Mapped reads: asks the OS for these pairs' blobs ahead (platform::advise_willneed).  False when unbuffered,
     /// when read-ahead is off, or before `open`.

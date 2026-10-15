@@ -50,7 +50,7 @@ async function copyText(text, btn) {
     use.setAttribute("href", `${SPRITE}#i-check`);
     setTimeout(() => use.setAttribute("href", `${SPRITE}#i-copy`), 1500);
   }
-  toast("success", "Copied to clipboard", "", 1800);
+  toast("success", "已复制到剪贴板", "", 1800);
 }
 
 // ------------------------------------------------------------------ theme and tabs
@@ -95,15 +95,15 @@ function headers(json = false) {
   return h;
 }
 $("api-key").value = store.get("apikey", "");
-$("api-key").onchange = () => { store.set("apikey", $("api-key").value.trim()); toast("success", "API key saved", "Kept in this browser only."); };
+$("api-key").onchange = () => { store.set("apikey", $("api-key").value.trim()); toast("success", "API 密钥已保存", "仅保存在当前浏览器。"); };
 
 let health = {model: "strata", images: false, max_context: 0};
 async function loadHealth() {
   try {
     health = await (await fetch("health")).json();
-    $("attach-btn").title = health.images ? "Attach a text file or a picture (or drop it here)"
-                                          : "Attach a text file (or drop it here)";
-    $("chat-empty-sub").textContent = `${health.model} runs on this PC. Nothing leaves it.`;
+    $("attach-btn").title = health.images ? "添加文本文件或图片，也可拖入文件"
+                                          : "添加文本文件，也可拖入文件";
+    $("chat-empty-sub").textContent = `${health.model} 在本机运行，对话不会发送到外部服务。`;
     $("tab-btn-images").hidden = !health.image_generation;
     if (location.hash === "#images" && health.image_generation) showTab("images");
   } catch (e) {
@@ -113,21 +113,21 @@ async function loadHealth() {
 
 // ------------------------------------------------------------------ Monitor
 const METRICS = [
-  {key: "speed", label: "Speed", icon: "gauge", unit: "t/s", series: "tok_s"},
-  {key: "gpu", label: "GPU load", icon: "gpu", unit: "%", series: "gpu_util", max: 100},
-  {key: "vram", label: "VRAM", icon: "layers", unit: "GB", series: "gpu_mem_used"},
-  {key: "temp", label: "GPU temp", icon: "thermometer", unit: "°C", series: "gpu_temp", tone: "warn"},
-  {key: "power", label: "Power", icon: "bolt", unit: "W", series: "gpu_power"},
+  {key: "speed", label: "生成速度", icon: "gauge", unit: "t/s", series: "tok_s"},
+  {key: "gpu", label: "GPU 使用率", icon: "gpu", unit: "%", series: "gpu_util", max: 100},
+  {key: "vram", label: "显存", icon: "layers", unit: "GB", series: "gpu_mem_used"},
+  {key: "temp", label: "GPU 温度", icon: "thermometer", unit: "°C", series: "gpu_temp", tone: "warn"},
+  {key: "power", label: "功耗", icon: "bolt", unit: "W", series: "gpu_power"},
   {key: "pcie", label: "PCIe", icon: "link", unit: "", series: "gpu_pcie_rx_mb", tone: "info"},
   {key: "cpu", label: "CPU", icon: "cpu", unit: "%", series: "cpu", max: 100},
-  {key: "disk", label: "Disk read", icon: "disk", unit: "MB/s", series: "disk_read_mb", tone: "info"},
+  {key: "disk", label: "磁盘读取", icon: "disk", unit: "MB/s", series: "disk_read_mb", tone: "info"},
 ];
 $("metrics").innerHTML = METRICS.map((m) => `
   <div class="st-card metric-card"><div class="st-metric">
     <span class="st-metric__label">${icon(m.icon, "st-icon st-icon--sm")}${esc(m.label)}</span>
     ${m.key === "speed" ? `<div class="speed-values">
-      <div><span class="st-metric__value" id="mv-speed">-</span><span class="st-metric__sub" id="ms-speed">Decode</span></div>
-      <div class="speed-prefill"><span class="st-metric__value" id="mv-prefill">-</span><span class="st-metric__sub" id="ms-prefill">Prefill</span></div>
+      <div><span class="st-metric__value" id="mv-speed">-</span><span class="st-metric__sub" id="ms-speed">解码</span></div>
+      <div class="speed-prefill"><span class="st-metric__value" id="mv-prefill">-</span><span class="st-metric__sub" id="ms-prefill">预填充</span></div>
     </div>` : `<span class="st-metric__value" id="mv-${m.key}">–</span>
     <span class="st-metric__sub" id="ms-${m.key}"></span>`}
     <svg class="st-metric__spark" id="sp-${m.key}" viewBox="0 0 100 32" preserveAspectRatio="none"${m.tone ? ` data-tone="${m.tone}"` : ""}>
@@ -159,8 +159,8 @@ async function poll() {
   try {
     const r = await fetch(reqShowAll ? "metrics?requests=all" : "metrics", {headers: headers()});
     if (r.status === 401) {
-      setPill("error", "API key needed");
-      if (!keyWarned) { keyWarned = true; toast("warn", "API key needed", "This server needs a key: add it under About > Settings.", 6000); }
+      setPill("error", "需要 API 密钥");
+      if (!keyWarned) { keyWarned = true; toast("warn", "需要 API 密钥", "请在“关于与设置 → 网页设置”中填写 API 密钥。", 6000); }
     } else if (r.ok) {
       lastMetrics = await r.json();
       metricsFailures = 0;
@@ -169,7 +169,7 @@ async function poll() {
       throw new Error(`HTTP ${r.status}`);
     }
   } catch (e) {
-    if (++metricsFailures === 3) setPill("error", "Server not reachable");
+    if (++metricsFailures === 3) setPill("error", "无法连接服务");
   }
   if (tab === "monitor" && ++mcpTick % 10 === 0) loadMcp();       // server states change rarely: every 10 s
   setTimeout(poll, 1000);
@@ -186,13 +186,13 @@ function render(m) {
   // the header pill
   if (live.state === "reading") {
     const pct = live.prompt_total ? Math.round((100 * live.prompt_read) / live.prompt_total) : null;
-    setPill("reading", pct != null ? `Reading prompt · ${pct}%` : "Reading prompt");
+    setPill("reading", pct != null ? `预填充 · ${pct}%` : "正在预填充");
   } else if (live.state === "generating") {
-    setPill("generating", `Generating · ${fmt(live.tok_s, 1)} tok/s`);
+    setPill("generating", `生成中 · ${fmt(live.tok_s, 1)} token/s`);
   } else {
-    setPill("idle", "Idle");
+    setPill("idle", "空闲");
   }
-  if (live.queued > 0) setPill("queued", `${live.queued} queued`);
+  if (live.queued > 0) setPill("queued", `${live.queued} 条排队`);
   if (tab === "monitor") renderMonitor(live, hw, st, eng, h, last, m.requests || [], m.totals, m.requests_kept);
   if (tab === "monitor") renderConvCache(m.conversation_cache);
   if (tab === "about") renderAbout(eng, hw, st);
@@ -203,7 +203,7 @@ function render(m) {
 function since(t) {
   if (!t) return "";
   const s = Math.max(0, Date.now() / 1000 - t);
-  return s < 60 ? "just now" : s < 3600 ? `${fmt(s / 60)} min ago` : `${fmt(s / 3600, 1)} h ago`;
+  return s < 60 ? "刚刚" : s < 3600 ? `${fmt(s / 60)} 分钟前` : `${fmt(s / 3600, 1)} 小时前`;
 }
 function renderConvCache(c) {
   $("cc-card").hidden = !c;
@@ -217,37 +217,37 @@ function renderConvCache(c) {
     $("cc-mem-text").textContent = `${gb(c.bytes)} / ${gb(budget)} GB`;
     $("cc-mem-bar").style.width = pct(c.bytes, budget);
   }
-  $("cc-sum").textContent = c.requests ? `${fmt(c.requests_reused)} of ${fmt(c.requests)} requests reused part of their prompt` : "";
-  const share = c.prompt_tokens ? ` (${fmt((100 * c.reused_tokens) / c.prompt_tokens)}% of all prompt tokens)` : "";
-  const event = c.last_event ? `${c.last_event === "parked" ? "Parked" : "Restored"} ${fmt(c.last_tokens)} tokens, ${since(c.last_at)}` : null;
+  $("cc-sum").textContent = c.requests ? `${fmt(c.requests)} 条请求中有 ${fmt(c.requests_reused)} 条复用了前缀` : "";
+  const share = c.prompt_tokens ? `（占输入 token 的 ${fmt((100 * c.reused_tokens) / c.prompt_tokens)}%）` : "";
+  const event = c.last_event ? `${c.last_event === "parked" ? "已保存" : "已恢复"} ${fmt(c.last_tokens)} token，${since(c.last_at)}` : null;
   facts($("cc-facts"), [
-    ["Last request", c.last_prompt != null ? `${fmt(c.last_reused || 0)} of ${fmt(c.last_prompt)} prompt tokens reused` : null],
-    ["Reused since start", c.requests ? `${fmt(c.reused_tokens)} tokens${share}` : null],
-    ["Parked / restored", c.enabled ? `${fmt(c.parks)} / ${fmt(c.restores)}${c.evictions ? ` · ${fmt(c.evictions)} evicted` : ""}` : null],
-    ["Last switch", c.enabled ? event : null],
+    ["上次请求", c.last_prompt != null ? `${fmt(c.last_prompt)} 个输入 token 中复用 ${fmt(c.last_reused || 0)} 个` : null],
+    ["启动以来复用", c.requests ? `${fmt(c.reused_tokens)} tokens${share}` : null],
+    ["保存／恢复次数", c.enabled ? `${fmt(c.parks)} / ${fmt(c.restores)}${c.evictions ? ` · 淘汰 ${fmt(c.evictions)} 次` : ""}` : null],
+    ["最近切换", c.enabled ? event : null],
   ]);
   $("cc-note").textContent = c.enabled
-    ? "A request that continues a parked conversation gets its state back instead of reading it again; the oldest goes when the slots or the memory are full."
-    : "The engine keeps the last conversation's state, so a follow-up reads only what is new. To keep several conversations (agents taking turns), add \"--conversation-cache-mib\", \"8192\" to the run config's args (docs/DETAILS.md).";
+    ? "继续已缓存的对话时恢复其状态，避免全量预填充；缓存数量或内存预算不足时淘汰旧状态。缓存只保留在 RAM 中，服务退出后清空。"
+    : "引擎保留最近一次对话；若需切换多个会话，请在“关于与设置 → 并行与对话缓存”中设置 RAM 缓存预算。";
 }
 
 function renderTotals(t) {
   if (!t || !t.requests) return "";
   const since = new Date(t.since * 1000).toLocaleString([], {weekday: "short", hour: "2-digit", minute: "2-digit"});
   const read = t.prompt_tokens - t.reused;
-  const pSpeed = t.prompt_ms > 0 && read > 0 ? ` at ${fmt(read / (t.prompt_ms / 1000))} tok/s` : "";
-  const oSpeed = t.decode_ms > 0 && t.output_tokens > 0 ? ` at ${fmt(t.output_tokens / (t.decode_ms / 1000), 1)} tok/s` : "";
-  return `Since ${since}: ${fmt(t.requests)} requests · ${fmt(read)} prompt tokens read${pSpeed} (${fmt(t.reused)} reused) · ` +
-         `${fmt(t.output_tokens)} written${oSpeed}`;
+  const pSpeed = t.prompt_ms > 0 && read > 0 ? `，${fmt(read / (t.prompt_ms / 1000))} token/s` : "";
+  const oSpeed = t.decode_ms > 0 && t.output_tokens > 0 ? `，${fmt(t.output_tokens / (t.decode_ms / 1000), 1)} token/s` : "";
+  return `从 ${since} 起：${fmt(t.requests)} 条请求 · 预填充 ${fmt(read)} token${pSpeed}（复用 ${fmt(t.reused)} token） · ` +
+         `生成 ${fmt(t.output_tokens)} token${oSpeed}`;
 }
 function renderMonitor(live, hw, st, eng, h, last, requests, totals, kept) {
   // model state
   const on = live.queued > 0 ? "queued" : live.state;
   for (const b of document.querySelectorAll("#state-badges .st-badge")) b.classList.toggle("on", b.dataset.s === on || b.dataset.s === live.state);
   const prog = $("state-progress");
-  let label = "Waiting for a request", detail = "", pct = 0;
+  let label = "等待请求", detail = "", pct = 0;
   if (live.state === "reading") {
-    label = "Reading prompt";
+    label = "正在预填充";
     prog.dataset.tone = "info";
     if (live.prompt_total) {
       pct = (100 * live.prompt_read) / live.prompt_total;
@@ -256,13 +256,13 @@ function renderMonitor(live, hw, st, eng, h, last, requests, totals, kept) {
       detail = `${fmt(live.prompt_tokens)} tokens`;
     }
   } else if (live.state === "generating") {
-    label = live.phase ? live.phase[0].toUpperCase() + live.phase.slice(1) : "Generating";
+    label = ({thinking: "思考中", answering: "回答中", generating: "生成中", reading: "预填充"}[live.phase] || "生成中");
     delete prog.dataset.tone;
     pct = live.max_tokens ? Math.min(100, (100 * live.generated) / live.max_tokens) : 0;
     detail = `${fmt(live.generated)} tokens · ${fmt(live.tok_s, 1)} tok/s`;
   } else if (last) {
     delete prog.dataset.tone;
-    detail = `last: ${fmt(last.output_tokens)} tokens${last.decode_tok_s ? ` at ${fmt(last.decode_tok_s, 1)} tok/s` : ""}`;
+    detail = `上次：${fmt(last.output_tokens)} token${last.decode_tok_s ? `，${fmt(last.decode_tok_s, 1)} token/s` : ""}`;
   }
   $("state-label").textContent = label;
   $("state-detail").textContent = detail;
@@ -271,41 +271,41 @@ function renderMonitor(live, hw, st, eng, h, last, requests, totals, kept) {
   // the eight cards
   const speed = live.state === "generating" ? live.tok_s : last ? last.decode_tok_s : null;
   setMetric("speed", speed == null ? null : fmt(speed, 1), "t/s",
-            live.state === "generating" ? "Decode now" : last ? "Decode last request" : "Decode");
+            live.state === "generating" ? "当前解码" : last ? "上次解码" : "解码");
   const prefill = live.state !== "idle" ? live.prefill_tok_s_mean
                 : last && last.prompt_ms > 0 ? Math.max(0, last.prompt_tokens - (last.reused || 0)) / (last.prompt_ms / 1000) : null;
   setMetric("prefill", prefill == null ? null : fmt(prefill), "t/s",
-            live.state === "reading" ? "Prefill now" : live.state === "generating" ? "Prefill this request" : last ? "Prefill last request" : "Prefill");
+            live.state === "reading" ? "当前预填充" : live.state === "generating" ? "本次预填充" : last ? "上次预填充" : "预填充");
   spark("sp-speed", h.tok_s);
   spark("sp-prefill", h.prefill_tok_s_mean);
   // a model split across several cards (issue #112): the cards show their total / mean / hottest, and each card's own
   const per = (f) => (hw.gpus || []).map((g) => `GPU ${g.index} ${f(g)}`).join(" · ");
   const multi = (hw.gpus || []).length > 1;
   setMetric("gpu", hw.gpu_util == null ? null : fmt(hw.gpu_util), "%",
-            multi ? per((g) => (g.util == null ? "–" : `${fmt(g.util)}%`)) : st.gpu_name || (st.gpu_note ? "not available" : ""));
+            multi ? per((g) => (g.util == null ? "–" : `${fmt(g.util)}%`)) : st.gpu_name || (st.gpu_note ? "暂无数据" : ""));
   spark("sp-gpu", h.gpu_util, 100);
   setMetric("vram", hw.gpu_mem_used == null ? null : gb(hw.gpu_mem_used), hw.gpu_mem_total ? `/ ${gb(hw.gpu_mem_total, 0)} GB` : "GB",
             multi ? per((g) => (g.mem_used == null ? "–" : `${gb(g.mem_used)} GB`))
-                  : eng.expert_slots ? `${fmt(eng.expert_slots)} experts cached` : (st.gpu_note ? "not available on Windows AMD yet" : ""));
+                  : eng.expert_slots ? `缓存 ${fmt(eng.expert_slots)} 个专家` : (st.gpu_note ? "Windows AMD 暂不支持读取" : ""));
   spark("sp-vram", h.gpu_mem_used, hw.gpu_mem_total);
   setMetric("temp", hw.gpu_temp == null ? null : fmt(hw.gpu_temp), "°C",
             multi ? per((g) => (g.temp == null ? "–" : `${fmt(g.temp)}°`)) : "");
   spark("sp-temp", h.gpu_temp, 90);
-  setMetric("power", hw.gpu_power == null ? null : fmt(hw.gpu_power), "W", hw.gpu_power_limit ? `of ${fmt(hw.gpu_power_limit)} W limit` : "");
+  setMetric("power", hw.gpu_power == null ? null : fmt(hw.gpu_power), "W", hw.gpu_power_limit ? `功耗上限 ${fmt(hw.gpu_power_limit)} W` : "");
   spark("sp-power", h.gpu_power, hw.gpu_power_limit);
   const gen = hw.gpu_pcie_gen_max || hw.gpu_pcie_gen;
   setMetric("pcie", gen ? `Gen${gen}` : null, hw.gpu_pcie_width ? `x${hw.gpu_pcie_width}` : "",
-            hw.gpu_pcie_rx_mb == null ? "" : `to GPU ${fmt(hw.gpu_pcie_rx_mb, hw.gpu_pcie_rx_mb < 10 ? 1 : 0)} MB/s` +
-            (hw.gpu_pcie_gen && gen && hw.gpu_pcie_gen < gen ? ` · idle Gen${hw.gpu_pcie_gen}` : ""));
+            hw.gpu_pcie_rx_mb == null ? "" : `GPU 接收 ${fmt(hw.gpu_pcie_rx_mb, hw.gpu_pcie_rx_mb < 10 ? 1 : 0)} MB/s` +
+            (hw.gpu_pcie_gen && gen && hw.gpu_pcie_gen < gen ? ` · 当前 Gen${hw.gpu_pcie_gen}` : ""));
   spark("sp-pcie", h.gpu_pcie_rx_mb);
-  setMetric("cpu", hw.cpu == null ? null : fmt(hw.cpu), "%", st.threads ? `${st.cores ? `${st.cores} cores · ` : ""}${st.threads} threads` : "");
+  setMetric("cpu", hw.cpu == null ? null : fmt(hw.cpu), "%", st.threads ? `${st.cores ? `${st.cores} 核 · ` : ""}${st.threads} 线程` : "");
   spark("sp-cpu", h.cpu, 100);
   if (hw.disk_read_mb == null) {
-    setMetric("disk", null, "", st.psutil ? "" : "needs psutil (setup installs it)");
+    setMetric("disk", null, "", st.psutil ? "" : "需要 psutil（安装程序会安装）");
   } else {
     const big = hw.disk_read_mb >= 1000;
     setMetric("disk", big ? fmt(hw.disk_read_mb / 1024, 2) : fmt(hw.disk_read_mb, hw.disk_read_mb < 10 ? 1 : 0), big ? "GB/s" : "MB/s",
-              hw.disk_write_mb == null ? "" : `write ${fmt(hw.disk_write_mb, 1)} MB/s`);
+              hw.disk_write_mb == null ? "" : `写入 ${fmt(hw.disk_write_mb, 1)} MB/s`);
   }
   spark("sp-disk", h.disk_read_mb);
 
@@ -332,17 +332,17 @@ function renderMonitor(live, hw, st, eng, h, last, requests, totals, kept) {
   // recent requests
   const body = $("req-body");
   if (!requests.length) {
-    body.innerHTML = `<tr><td colspan="9" class="muted">No requests yet</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9" class="muted">暂无请求</td></tr>`;
   } else {
-    const badge = {stop: ["", "Done"], length: ["", "Max tokens"], cancel: ["st-badge--queued", "Stopped"],
-                   disconnect: ["st-badge--queued", "Closed"], error: ["st-badge--error", "Error"]};
+    const badge = {stop: ["", "完成"], length: ["", "达到输出上限"], cancel: ["st-badge--queued", "已停止"],
+                   disconnect: ["st-badge--queued", "连接关闭"], error: ["st-badge--error", "错误"]};
     body.innerHTML = requests.slice(0, reqShowAll ? requests.length : 12).map((r) => {
       const [cls, text] = badge[r.finish] || ["", r.finish || "–"];
       const t = new Date(r.time * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"});
-      const proj = r.projection == null ? "" : ` <span class="st-badge${r.projection ? " st-badge--reading" : ""}" title="experimental speed projection ${r.projection ? "on" : "off"}">${r.projection ? "ESP" : "stock"}</span>`;
+      const proj = r.projection == null ? "" : ` <span class="st-badge${r.projection ? " st-badge--reading" : ""}" title="实验性速度投影：${r.projection ? "开启" : "关闭"}">${r.projection ? "ESP" : "原模型"}</span>`;
       // #588: the VRAM share; the PCIe share (--pcie-frac) beside it when there is one
       const hit = r.hit_rate == null ? "–" : `${(r.hit_rate * 100).toFixed(1)}%` +
-        (r.pcie_share ? ` <span class="muted" title="routed experts the GPU read over PCIe (--pcie-frac) or another GPU computed">+${(r.pcie_share * 100).toFixed(1)}% PCIe</span>` : "");
+        (r.pcie_share ? ` <span class="muted" title="由 GPU 经 PCIe 读取或由其他 GPU 计算的路由专家">+${(r.pcie_share * 100).toFixed(1)}% PCIe</span>` : "");
       // Reused tokens are not prefetched again. Match the Monitor's existing Prefill metric.
       const fresh = r.prompt_tokens == null ? null : Math.max(0, r.prompt_tokens - (r.reused || 0));
       const prefillRate = fresh > 0 && r.prompt_ms > 0 ? fresh / (r.prompt_ms / 1000) : null;
@@ -354,46 +354,46 @@ function renderMonitor(live, hw, st, eng, h, last, requests, totals, kept) {
   const all = $("req-all");
   kept = kept == null ? requests.length : kept;
   all.hidden = kept <= 12;
-  all.textContent = reqShowAll ? "Show fewer" : `Show all (${kept})`;
+  all.textContent = reqShowAll ? "收起列表" : `显示全部（${kept}）`;
   $("req-wrap").classList.toggle("all", reqShowAll);
   $("req-totals").textContent = renderTotals(totals);
 }
 
 function facts(el, rows) {
   el.innerHTML = rows.filter((r) => r[1] != null && r[1] !== "").map(([k, v, copy]) =>
-    `<dt>${esc(k)}</dt><dd>${copy ? `<code>${esc(v)}</code><button class="st-btn st-btn--icon" data-copy="${esc(v)}" aria-label="Copy">${icon("copy")}</button>` : esc(v)}</dd>`).join("");
+    `<dt>${esc(k)}</dt><dd>${copy ? `<code>${esc(v)}</code><button class="st-btn st-btn--icon" data-copy="${esc(v)}" aria-label="复制">${icon("copy")}</button>` : esc(v)}</dd>`).join("");
 }
 // INFO cvec=project:4-44[:singleL] | add:A-B | 0
 function projectionText(c) {
   if (!c || c === "0" || c === 0) return null;
   const [mode, range, single] = String(c).split(":");
   const [a, b] = (range || "").split("-");
-  return `${mode === "project" ? "Projection" : "Additive"} control vector on layers ${a}–${b}` +
-         `${single ? ` (layer ${single.replace("single", "")}'s direction)` : ""}. Per chat in Sampling. Its package ` +
-         "describes the vector as a refusal-direction projection; measure the speed yourself";
+  return `${mode === "project" ? "投影" : "加法"}控制向量，层 ${a}～${b}` +
+         `${single ? `（使用第 ${single.replace("single", "")} 层方向）` : ""}。可在“采样与思考”中按对话切换。模型包` +
+         "将其描述为拒绝方向投影；实际速度需测量确认。";
 }
 function renderAbout(eng, hw, st) {
-  const kv = {int8: "8-bit", q4_0: "4-bit (Hadamard-rotated)", fp16: "16-bit"}[eng.kv] || eng.kv;
+  const kv = {int8: "8 位", q4_0: "4 位（Hadamard 旋转）", fp16: "16 位"}[eng.kv] || eng.kv;
   facts($("facts-engine"), [
-    ["Model", eng.model],
-    ["Engine", eng.version ? `v${eng.version}` : "built from source"],
-    ["Context", eng.max_context ? `${fmt(eng.max_context)} tokens` : null],
-    ["KV cache", kv ? `${kv}${eng.kv_resident ? `, streamed: ${fmt(eng.kv_resident)} positions per layer in VRAM, the rest in RAM` : ", all in VRAM"}` : null],
-    ["Experts in VRAM", eng.expert_slots ? `${fmt(eng.expert_slots)} (${gb((eng.expert_cache_mib || 0) * 1048576)} GB)` : null],
-    ["Speculation", eng.spec ? `MTP drafts up to ${Math.max(0, (eng.mtp_max || eng.spec) - 1)} tokens${eng.lookup ? ", prompt lookup on" : ""}` : null],
-    ["Images", eng.images ? "on" : "off"],
-    ["Experimental speed projection", projectionText(eng.cvec)],
+    ["模型", eng.model],
+    ["引擎", eng.version ? `v${eng.version}` : "本地编译"],
+    ["上下文容量", eng.max_context ? `${fmt(eng.max_context)} tokens` : null],
+    ["KV 缓存", kv ? `${kv}${eng.kv_resident ? `；每层 ${fmt(eng.kv_resident)} 个位置驻留显存，其余保存在 RAM` : "；全部驻留显存"}` : null],
+    ["显存中的专家", eng.expert_slots ? `${fmt(eng.expert_slots)} (${gb((eng.expert_cache_mib || 0) * 1048576)} GB)` : null],
+    ["投机解码", eng.spec ? `MTP 最多 ${Math.max(0, (eng.mtp_max || eng.spec) - 1)} 个草稿 token${eng.lookup ? "；已启用提示词查找" : ""}` : null],
+    ["图片识别", eng.images ? "开启" : "关闭"],
+    ["实验性速度投影", projectionText(eng.cvec)],
   ]);
   facts($("facts-hw"), [
-    ["GPU", st.gpu_name ? `${st.gpu_name}${hw.gpu_mem_total ? `, ${gb(hw.gpu_mem_total, 0)} GB` : ""}` : (st.gpu_note || "not readable (NVML)")],
-    ["CPU", st.cpu_name ? `${st.cpu_name}${st.threads ? `, ${st.threads} threads` : ""}` : null],
-    ["RAM", hw.ram_total ? `${gb(hw.ram_total, 0)} GB` : null],
+    ["GPU", st.gpu_name ? `${st.gpu_name}${hw.gpu_mem_total ? `, ${gb(hw.gpu_mem_total, 0)} GB` : ""}` : (st.gpu_note || "无法读取 NVML")],
+    ["CPU", st.cpu_name ? `${st.cpu_name}${st.threads ? `, ${st.threads} 线程` : ""}` : null],
+    ["系统内存", hw.ram_total ? `${gb(hw.ram_total, 0)} GB` : null],
   ]);
   const base = location.origin;
   facts($("facts-api"), [
-    ["OpenAI base URL", `${base}/v1`, true],
-    ["Anthropic base URL", base, true],
-    ["Model name", eng.model, true],
+    ["OpenAI API 地址", `${base}/v1`, true],
+    ["Anthropic API 地址", base, true],
+    ["模型名称", eng.model, true],
   ]);
 }
 document.addEventListener("click", (e) => {
@@ -416,21 +416,21 @@ async function loadMcp() {
   clearTimeout(mcpRetry);                          // right after the start, servers may still be starting (npx downloads)
   if ((mcpInfo.servers || []).some((s) => s.status === "starting")) mcpRetry = setTimeout(loadMcp, 3000);
 }
-const MCP_STATE = {ready: ["st-badge--generating", "Connected"], starting: ["st-badge--reading", "Starting"],
-                   failed: ["st-badge--error", "Failed"], stopped: ["st-badge--queued", "Stopped"], idle: ["", "Waiting"]};
+const MCP_STATE = {ready: ["st-badge--generating", "已连接"], starting: ["st-badge--reading", "启动中"],
+                   failed: ["st-badge--error", "失败"], stopped: ["st-badge--queued", "已停止"], idle: ["", "等待中"]};
 function renderMcp() {
   const servers = mcpInfo.servers || [];
   $("mcp-card").hidden = !servers.length;
   $("mcp-row").hidden = !servers.length;
   const ready = servers.filter((s) => s.status === "ready" || s.status === "stopped");
-  $("mcp-sum").textContent = servers.length ? `${fmt(mcpInfo.tools)} tools · ${ready.length} of ${servers.length} servers connected` : "";
-  $("mcp-row-sub").textContent = mcpInfo.tools ? `${fmt(mcpInfo.tools)} tools from ${ready.map((s) => s.name).join(", ")}; the model calls them when it decides to`
-                                               : "no server is connected yet (see the Monitor)";
+  $("mcp-sum").textContent = servers.length ? `${fmt(mcpInfo.tools)} 个工具 · ${ready.length}/${servers.length} 个服务已连接` : "";
+  $("mcp-row-sub").textContent = mcpInfo.tools ? `${fmt(mcpInfo.tools)} 个工具，来自 ${ready.map((s) => s.name).join(", ")}；模型可按需调用`
+                                               : "尚未连接 MCP 服务，请查看监控页。";
   $("mcp-list").innerHTML = servers.map((s) => {
     const [cls, text] = MCP_STATE[s.status] || ["", s.status];
     const info = s.info && s.info.name ? ` · ${s.info.name}${s.info.version ? ` ${s.info.version}` : ""}` : "";
     return `<div class="mcp-server"><div class="mcp-server__head"><span class="st-badge ${cls}">${esc(text)}</span>` +
-      `<strong>${esc(s.name)}</strong><span class="muted small">${esc(s.transport)} · ${fmt(s.tools.length)} tools${esc(info)}</span></div>` +
+      `<strong>${esc(s.name)}</strong><span class="muted small">${esc(s.transport)} · ${fmt(s.tools.length)} 个工具${esc(info)}</span></div>` +
       (s.error ? `<div class="msg-error">${esc(s.error)}</div>` : "") +
       (s.tools.length ? `<div class="mcp-server__tools">${s.tools.map((t) => `<span class="chip" title="${esc(t.description || "")}">${esc(t.tool)}</span>`).join("")}</div>` : "") +
       `</div>`;
@@ -440,56 +440,345 @@ function renderMcp() {
 // ------------------------------------------------------------------ Model settings (GET / POST /config, #564)
 // A few documented keys of the run config (strata-<model>.json), for every client, from the next start on.  The
 // server lists them, checks every value and keeps every other key of the file as it is.
+const CFG_ZH = [
+  {
+    "key": "parallel",
+    "label": "并行请求数",
+    "group": "并行与对话缓存",
+    "help": "同时生成的最大请求数；1 为单路，建议先用 2 或 4。每路有独立状态并占用额外显存。",
+    "apply_mode": "restart",
+    "kind": "number",
+    "min": 1,
+    "step": 1
+  },
+  {
+    "key": "batch_mtp",
+    "label": "并行 MTP 加速",
+    "group": "并行与对话缓存",
+    "help": "并行时启用 MTP；每路每轮验证一个草稿。单路时仍使用原来的 MTP 窗口。",
+    "apply_mode": "restart",
+    "kind": "bool"
+  },
+  {
+    "key": "conversation_cache_mib",
+    "label": "RAM 对话缓存预算（MiB）",
+    "group": "并行与对话缓存",
+    "help": "切换对话时保存完整状态的 RAM 上限，单位 MiB；32768 = 32 GiB，0 或留空关闭。按需占用，退出服务后清空。",
+    "apply_mode": "restart",
+    "kind": "number",
+    "min": 0,
+    "step": 1
+  },
+  {
+    "key": "conversation_cache_slots",
+    "label": "RAM 缓存对话数",
+    "group": "并行与对话缓存",
+    "help": "RAM 中最多停放的对话数，引擎默认 4，本机设置为 8。实际复用的会话切走后重新放到队尾；槽位或 RAM 预算不足时，从队首淘汰最久未用的普通快照。没有时间过期，显式固定的共享前缀保留。",
+    "apply_mode": "restart",
+    "kind": "number",
+    "min": 1,
+    "step": 1
+  },
+  {
+    "key": "conversation_cache_min_free_mib",
+    "label": "最低可用 RAM（MiB）",
+    "group": "并行与对话缓存",
+    "help": "保存／恢复缓存时要求的最低可用系统 RAM，单位 MiB；8192 = 8 GiB。",
+    "apply_mode": "restart",
+    "kind": "number",
+    "min": 0,
+    "step": 1
+  },
+  {
+    "key": "sampling.temperature",
+    "label": "采样温度",
+    "group": "采样与思考",
+    "help": "客户端未指定时的温度；0 为贪心采样。",
+    "apply_mode": "hot",
+    "kind": "number",
+    "min": 0,
+    "step": "any"
+  },
+  {
+    "key": "sampling.top_p",
+    "label": "Top-p 概率阈值",
+    "group": "采样与思考",
+    "help": "客户端未指定时的 Top-p，范围大于 0 且不超过 1。",
+    "apply_mode": "hot",
+    "kind": "number",
+    "min": 0,
+    "step": "any"
+  },
+  {
+    "key": "sampling.top_k",
+    "label": "Top-k 候选数量",
+    "group": "采样与思考",
+    "help": "客户端未指定时的 Top-k，范围 1～64。",
+    "apply_mode": "hot",
+    "kind": "number",
+    "min": 1,
+    "step": 1
+  },
+  {
+    "key": "sampling.min_p",
+    "label": "Min-p 概率阈值",
+    "group": "采样与思考",
+    "help": "客户端未指定时的 Min-p，范围 0～1。",
+    "apply_mode": "hot",
+    "kind": "number",
+    "min": 0,
+    "step": "any"
+  },
+  {
+    "key": "reasoning_budget_tokens",
+    "label": "思考预算（token）",
+    "group": "采样与思考",
+    "help": "每条请求的思考 token 上限；0 或留空表示不限制，不代表关闭思考。",
+    "apply_mode": "hot",
+    "kind": "number",
+    "min": 0,
+    "step": 1
+  },
+  {
+    "key": "fit_max_tokens",
+    "label": "自动适配输出额度",
+    "group": "采样与思考",
+    "help": "当输出额度超过剩余上下文时，自动缩短额度，避免返回 HTTP 400。",
+    "apply_mode": "hot",
+    "kind": "bool"
+  },
+  {
+    "key": "anthropic_thinking",
+    "label": "Anthropic 默认思考行为",
+    "group": "采样与思考",
+    "help": "Anthropic 客户端未要求思考时：按模型默认，或仅在明确请求时思考。",
+    "apply_mode": "hot",
+    "kind": "enum",
+    "choices": [
+      "model",
+      "on_request"
+    ],
+    "choice_labels": {
+      "model": "按模型默认",
+      "on_request": "仅在请求中启用"
+    }
+  },
+  {
+    "key": "effort_position",
+    "label": "思考强度标记位置",
+    "group": "采样与思考",
+    "help": "思考强度标记放在提示词开头或末尾；放末尾可减少切换强度造成的前缀缓存失效。",
+    "apply_mode": "restart",
+    "kind": "enum",
+    "choices": [
+      "start",
+      "end"
+    ],
+    "choice_labels": {
+      "start": "提示词开头",
+      "end": "提示词末尾"
+    }
+  },
+  {
+    "key": "aliases",
+    "label": "模型别名",
+    "group": "服务与资源",
+    "help": "服务接受并列出的其他模型名称，用英文逗号分隔。",
+    "apply_mode": "hot",
+    "kind": "names"
+  },
+  {
+    "key": "model_profiles",
+    "label": "分身模型",
+    "group": "分身模型",
+    "help": "分身模型：共用当前已加载模型的其他名称，每个可单独设置思考开关、思考预算和思考强度；保存后热生效并列入 /v1/models。明确设置优先于客户端与共享设置；留空项沿用原行为。普通别名仍独立保留。",
+    "apply_mode": "hot",
+    "kind": "profiles"
+  },
+  {
+    "key": "idle_unload_s",
+    "label": "空闲卸载时间（秒）",
+    "group": "服务与资源",
+    "help": "空闲多少秒后卸载模型；0 或留空表示保持加载。",
+    "apply_mode": "hot",
+    "kind": "number",
+    "min": 0,
+    "step": "any"
+  },
+  {
+    "key": "lazy_load",
+    "label": "首次请求时加载",
+    "group": "服务与资源",
+    "help": "启动时暂不加载，由首次请求加载；仅支持纯文字配置。",
+    "apply_mode": "restart",
+    "kind": "bool"
+  },
+  {
+    "key": "engine_silence_s",
+    "label": "引擎静默超时（秒）",
+    "group": "服务与资源",
+    "help": "引擎连续无响应多少秒后终止请求；默认 300 秒，0 表示一直等待。",
+    "apply_mode": "hot",
+    "kind": "number",
+    "min": 0,
+    "step": "any"
+  },
+  {
+    "key": "api_monitor",
+    "label": "保留 API 请求记录",
+    "group": "服务与资源",
+    "help": "在内存中保存最近 100 条 API 请求的输入和输出，用于 API 监视器。",
+    "apply_mode": "hot",
+    "kind": "bool"
+  },
+  {
+    "key": "open_browser",
+    "label": "启动后打开网页",
+    "group": "服务与资源",
+    "help": "模型准备好后自动打开聊天网页。",
+    "apply_mode": "restart",
+    "kind": "bool"
+  },
+  {
+    "key": "vram_reserve_mib",
+    "label": "显存预留（MiB）",
+    "group": "服务与资源",
+    "help": "为桌面及其他程序预留的显存，单位 MiB；引擎默认 700，当前机器建议保留 4096。",
+    "apply_mode": "restart",
+    "kind": "number",
+    "min": 0,
+    "step": 1
+  }
+];
 let cfgKeys = [];
+function profileRow(p = {}) {
+  const th = p.thinking || "", ef = p.reasoning_effort || "";
+  return `<div class="cfg-profile-row">` +
+    `<input class="st-input p-name" placeholder="分身名称，如 strata-compress" value="${esc(p.name || "")}" autocomplete="off">` +
+    `<select class="st-input p-thinking"><option value=""${th === "" ? " selected" : ""}>思考继承</option><option value="off"${th === "off" ? " selected" : ""}>关闭思考</option><option value="on"${th === "on" ? " selected" : ""}>开启思考</option></select>` +
+    `<input class="st-input p-budget" type="number" min="0" step="1" placeholder="思考预算（token），默认" value="${p.reasoning_budget_tokens ?? ""}">` +
+    `<select class="st-input p-effort"><option value=""${ef === "" ? " selected" : ""}>强度默认</option><option value="low"${ef === "low" ? " selected" : ""}>低</option><option value="medium"${ef === "medium" ? " selected" : ""}>中</option><option value="high"${ef === "high" ? " selected" : ""}>高</option></select>` +
+    `<button type="button" class="p-del" title="删除这个分身">删除</button></div>`;
+}
 async function loadConfig() {
   let r;
   try { r = await fetch("config", {headers: headers()}); } catch (e) { return; }
-  if (!r.ok) { $("cfg-card").hidden = true; return; }       // no run config, an older server, or no key yet
-  const c = await r.json();
-  cfgKeys = c.keys || [];
+  if (!r.ok) { $("cfg-card").hidden = true; return; }
+  const c = await r.json(), byKey = new Map((c.keys || []).map(k => [k.key, k]));
+  const cache = lastMetrics?.conversation_cache || {}, engine = lastMetrics?.engine || {};
+  const runtime = {parallel: engine.batch_slots || 1, conversation_cache_mib: cache.budget_mib,
+                   conversation_cache_slots: cache.slots, conversation_cache_min_free_mib: engine.conversation_cache_min_free_mib};
+  cfgKeys = CFG_ZH.map(meta => {
+    const live = byKey.get(meta.key);
+    return {...meta, ...live, label: meta.label, help: meta.help, group: meta.group,
+            value: live ? live.value : runtime[meta.key] ?? null, unsupported: !live,
+            apply_mode: c.hot_reload_supported ? live?.apply_mode || "restart" : "restart"};
+  });
+  cfgKeys.push(...(c.keys || []).filter(k => !CFG_ZH.some(m => m.key === k.key)));
   $("cfg-file").textContent = c.file || "";
+  const stale = cfgKeys.some(k => k.unsupported) || !c.hot_reload_supported;
+  const pending = new Set(c.restart_pending || []), notices = [];
+  if (stale) notices.push("网页已更新；当前服务尚未加载热生效功能，保存仍需重启生效，灰色选项暂不可修改。请在方便时关闭 Strata 服务窗口并重新运行启动脚本，再刷新本页。");
+  if (pending.size) notices.push(`已保存但尚未生效，需重启整个 Strata 服务：${[...pending].map(key => CFG_ZH.find(k => k.key === key)?.label || key).join("、")}。`);
+  $("cfg-backend-note").hidden = !notices.length;
+  $("cfg-backend-note").textContent = notices.join(" ");
+  if ($("cfg-note")) $("cfg-note").textContent = c.note || "";
+  let section = "";
   $("cfg-form").innerHTML = cfgKeys.map((k, i) => {
-    const id = `cfg-${i}`, v = k.value;
-    let input;
+    const id = `cfg-${i}`, v = k.value, disabled = k.unsupported ? " disabled" : "";
+    let input, heading = "";
+    if (k.group && k.group !== section) {
+      section = k.group;
+      heading = `<h3 class="cfg-section">${esc(section)}</h3>`;
+    }
     if (k.kind === "bool" || k.kind === "enum") {
-      const opts = k.kind === "bool" ? [["true", "on"], ["false", "off"]] : k.choices.map((x) => [x, x]);
+      const opts = k.kind === "bool" ? [["true", "开启"], ["false", "关闭"]]
+        : k.choices.map(x => [x, k.choice_labels?.[x] || x]);
       const cur = v == null ? "" : String(v);
-      input = `<select class="st-input" id="${id}"><option value=""${cur === "" ? " selected" : ""}>default</option>` +
-        opts.map(([val, text]) => `<option value="${esc(val)}"${cur === val ? " selected" : ""}>${esc(text)}</option>`).join("") + `</select>`;
+      input = `<select class="st-input" id="${id}" data-setting="${esc(k.key)}"${disabled}><option value=""${cur === "" ? " selected" : ""}>默认</option>` +
+        opts.map(([val, text]) => `<option value="${esc(val)}"${cur === String(val) ? " selected" : ""}>${esc(text)}</option>`).join("") + `</select>`;
+    } else if (k.kind === "profiles") {
+      input = `<div class="cfg-profiles" id="${id}" data-setting="${esc(k.key)}">${(Array.isArray(v) ? v : []).map(profileRow).join("")}` +
+        `<button type="button" class="cfg-profile-add">添加分身</button></div>`;
     } else {
       const text = v == null ? "" : Array.isArray(v) ? v.join(", ") : String(v);
-      input = `<input class="st-input" id="${id}" ${k.kind === "number" ? 'type="number" step="any" min="0"' : 'type="text"'} ` +
-        `value="${esc(text)}" placeholder="default" autocomplete="off">`;
+      input = `<input class="st-input" id="${id}" data-setting="${esc(k.key)}" ${k.kind === "number" ? `type="number" step="${esc(k.step ?? "any")}" min="${esc(k.min ?? 0)}"` : 'type="text"'} ` +
+        `value="${esc(text)}" placeholder="默认" autocomplete="off"${disabled}>`;
     }
-    return `<label for="${id}" title="${esc(k.help)}">${esc(k.help)}<code>${esc(k.key)}</code></label>${input}`;
+    return heading + `<label for="${id}" title="${esc(k.help || "")}">${esc(k.label || k.key)}<code>${esc(k.key)}</code>` +
+      `<span class="cfg-help">${esc(k.help || "")}</span>` +
+      `<span class="cfg-help">${pending.has(k.key) ? "已保存，待重启生效" : k.apply_mode === "hot" ? "保存后热生效，用于后续请求" : "保存后需重启整个 Strata 服务"}</span></label>${input}`;
   }).join("");
+  $("cfg-form").querySelectorAll(".cfg-profiles").forEach(box => box.addEventListener("click", e => {
+    if (e.target.classList.contains("cfg-profile-add")) e.target.insertAdjacentHTML("beforebegin", profileRow());
+    if (e.target.classList.contains("p-del")) e.target.closest(".cfg-profile-row").remove();
+  }));
   $("cfg-card").hidden = false;
 }
 function configValue(k, el) {
+  if (k.kind === "profiles") {
+    const out = [...el.querySelectorAll(".cfg-profile-row")].map(r => {
+      const name = r.querySelector(".p-name").value.trim();
+      if (!name) throw new Error("分身模型：名称不能为空。");
+      const p = {name};
+      const th = r.querySelector(".p-thinking").value;
+      if (th) p.thinking = th;
+      const b = r.querySelector(".p-budget").value.trim();
+      if (b !== "") {
+        const n = Number(b);
+        if (!Number.isInteger(n) || n < 0) throw new Error(`分身 ${name}：思考预算需要不小于 0 的整数。`);
+        p.reasoning_budget_tokens = n;
+      }
+      const ef = r.querySelector(".p-effort").value;
+      if (ef) p.reasoning_effort = ef;
+      return p;
+    });
+    return out.length ? out : null;
+  }
   const s = el.value.trim();
   if (s === "") return null;
   if (k.kind === "bool") return s === "true";
-  if (k.kind === "number") return Number(s);
-  return s;                                         // enum, or names (the server splits them at commas)
+  if (k.kind === "number") {
+    const value = Number(s);
+    if (!Number.isFinite(value)) throw new Error(`${k.label || k.key}：请输入有效数值。`);
+    return value;
+  }
+  return s;
+}
+function configSaveMessage(b) {
+  if (!b.changed?.length) return "没有修改。";
+  const names = keys => keys.map(key => CFG_ZH.find(k => k.key === key)?.label || key).join("、");
+  // An older live backend does not apply anything hot; never claim it does based on frontend metadata.
+  const hot = Array.isArray(b.hot_applied) ? b.hot_applied : [];
+  const restart = b.restart_pending ?? b.restart_required ?? b.changed;
+  const text = hot.length ? [`已热生效：${names(hot)}（后续请求生效）。`] : ["已保存设置。"];
+  if (restart.length) text.push(`需重启整个 Strata 服务后生效：${names(restart)}。`);
+  text.push(`原配置已备份为 ${b.file}.bak。`);
+  return text.join(" ");
 }
 $("cfg-save").addEventListener("click", async () => {
-  const set = {};
-  cfgKeys.forEach((k, i) => {
-    const v = configValue(k, $(`cfg-${i}`));
-    const old = Array.isArray(k.value) ? k.value.join(", ") : k.value;
-    if (JSON.stringify(v) !== JSON.stringify(old ?? null)) set[k.key] = v;
-  });
-  if (!Object.keys(set).length) { $("cfg-msg").textContent = "Nothing changed."; return; }
+  if (!$("cfg-form").reportValidity()) return;
+  const button = $("cfg-save");
   try {
+    const set = {};
+    cfgKeys.forEach((k, i) => {
+      if (k.unsupported) return;
+      const v = configValue(k, $(`cfg-${i}`));
+      const old = Array.isArray(k.value) && k.kind !== "profiles" ? k.value.join(", ") : k.value;
+      if (JSON.stringify(v) !== JSON.stringify(old ?? null)) set[k.key] = v;
+    });
+    if (!Object.keys(set).length) { $("cfg-msg").textContent = "没有修改。"; return; }
+    button.disabled = true;
     const r = await fetch("config", {method: "POST", headers: headers(true), body: JSON.stringify({set})});
     const b = await r.json();
     if (!r.ok) throw new Error((b.error || {}).message || `HTTP ${r.status}`);
-    $("cfg-msg").textContent = b.changed.length
-      ? `Saved (${b.changed.join(", ")}); the earlier file is ${b.file}.bak. Start the model again to use it.` : "Nothing changed.";
-    loadConfig();
+    $("cfg-msg").textContent = configSaveMessage(b);
+    await loadConfig();
   } catch (e) {
     $("cfg-msg").textContent = "";
-    toast("error", "Not saved", String(e.message || e), 6000);
+    toast("error", "保存失败", String(e.message || e), 6000);
+  } finally {
+    button.disabled = false;
   }
 });
 
@@ -504,8 +793,8 @@ function inline(s) {
   return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code class="inline">${esc(codes[+i])}</code>`);
 }
 function codeBlock(lang, code) {
-  return `<div class="st-code"><div class="st-code__head"><span>${esc(lang || "code")}</span>` +
-    `<button class="st-btn st-btn--icon" data-code-copy aria-label="Copy code">${icon("copy")}</button></div>` +
+  return `<div class="st-code"><div class="st-code__head"><span>${esc(lang || "代码")}</span>` +
+    `<button class="st-btn st-btn--icon" data-code-copy aria-label="复制代码">${icon("copy")}</button></div>` +
     `<pre><code>${esc(code)}</code></pre></div>`;
 }
 function blocks(text) {
@@ -593,8 +882,8 @@ function msgEl(m, i) {
       const wrap = document.createElement("div");
       wrap.className = "msg-images";
       for (const im of m.images) {
-        if (im.url) { const img = document.createElement("img"); img.src = im.url; img.alt = im.name || "image"; wrap.appendChild(img); }
-        else { const c = document.createElement("span"); c.className = "chip"; c.innerHTML = icon("image", "st-icon st-icon--sm"); c.append(im.name || "image"); wrap.appendChild(c); }
+        if (im.url) { const img = document.createElement("img"); img.src = im.url; img.alt = im.name || "图片"; wrap.appendChild(img); }
+        else { const c = document.createElement("span"); c.className = "chip"; c.innerHTML = icon("image", "st-icon st-icon--sm"); c.append(im.name || "图片"); wrap.appendChild(c); }
       }
       el.appendChild(wrap);
     }
@@ -604,31 +893,31 @@ function msgEl(m, i) {
     el.appendChild(b);
     const meta = document.createElement("div");
     meta.className = "st-msg__meta";
-    meta.textContent = `You · ${timeStr(m.time)}`;
+    meta.textContent = `你 · ${timeStr(m.time)}`;
     el.appendChild(meta);
   } else {
     el.innerHTML = `<details class="st-collapse think" hidden><summary>${icon("thinking", "st-icon st-icon--sm")}<span class="think-title"></span>` +
       `${icon("chevron", "st-icon st-icon--sm st-chev")}</summary><div class="st-collapse__body thinking"></div></details>` +
       `<div class="st-bubble"></div><div class="st-msg__meta"><span class="meta-text"></span>` +
-      `<button class="st-btn st-btn--icon" data-msg-copy aria-label="Copy the answer" title="Copy">${icon("copy")}</button></div>`;
+      `<button class="st-btn st-btn--icon" data-msg-copy aria-label="复制回答" title="复制">${icon("copy")}</button></div>`;
     updateAssistant(el, m, false);
   }
   return el;
 }
 // One MCP tool call in the answer: a compact block (name, state, a one-line preview) that opens to the arguments and
 // the result as the model read it.  Its body is built only while open: a result can be 20,000 characters.
-const TOOL_STATE = {writing: ["st-badge--reading", "Writing"], running: ["st-badge--generating", "Running"], done: ["", "Done"],
-                    error: ["st-badge--error", "Error"], skipped: ["st-badge--queued", "Not run"]};
+const TOOL_STATE = {writing: ["st-badge--reading", "生成中"], running: ["st-badge--generating", "执行中"], done: ["", "完成"],
+                    error: ["st-badge--error", "错误"], skipped: ["st-badge--queued", "未执行"]};
 function toolHtml(t, k) {
   const [cls, label] = TOOL_STATE[t.state] || ["", t.state];
   const args = t.arguments == null ? "" : JSON.stringify(t.arguments, null, 2);
   const preview = t.result != null ? t.result : args.replace(/\s+/g, " ");
   let body = "";
   if (t.open) {
-    body = `<div class="tool-call__label">Arguments</div><pre class="tool-call__pre">${esc(args || "(being written)")}</pre>`;
+    body = `<div class="tool-call__label">调用参数</div><pre class="tool-call__pre">${esc(args || "（正在生成）")}</pre>`;
     if (t.result != null) {
-      body += `<div class="tool-call__label">${t.ok ? "Result" : "Error"}${t.chars ? ` · ${fmt(t.chars)} characters` : ""}` +
-              `${t.truncated ? ", cut for the model" : ""}</div><pre class="tool-call__pre">${esc(t.result)}</pre>`;
+      body += `<div class="tool-call__label">${t.ok ? "结果" : "错误"}${t.chars ? ` · ${fmt(t.chars)} 字符` : ""}` +
+              `${t.truncated ? "，已按模型输入上限截断" : ""}</div><pre class="tool-call__pre">${esc(t.result)}</pre>`;
     }
   }
   return `<details class="st-collapse tool-call" data-tool="${k}" data-state="${esc(t.state)}"${t.open ? " open" : ""}>` +
@@ -668,8 +957,8 @@ function updateAssistant(el, m, streaming) {
   if (m.reasoning) {
     det.hidden = false;
     const thinkingNow = streaming && !m.text;
-    el.querySelector(".think-title").textContent = thinkingNow ? "Thinking…" :
-      m.thinkSecs != null ? `Thought for ${fmt(m.thinkSecs, 1)} s` : "Thoughts";
+    el.querySelector(".think-title").textContent = thinkingNow ? "正在思考…" :
+      m.thinkSecs != null ? `思考耗时 ${fmt(m.thinkSecs, 1)} 秒` : "思考过程";
     const body = el.querySelector(".thinking");
     if (det.open || thinkingNow) body.textContent = m.reasoning;
     else body.dataset.pending = "1";
@@ -682,12 +971,12 @@ function updateAssistant(el, m, streaming) {
     bubble.innerHTML = `<div class="msg-error"></div>`;
     bubble.firstChild.textContent = m.error;
   } else if (!m.text && streaming && !(m.tools && m.tools.length)) {
-    bubble.innerHTML = m.reasoning ? `<span class="muted cursor">Writing</span>` : `<span class="cursor"></span>`;
+    bubble.innerHTML = m.reasoning ? `<span class="muted cursor">生成中</span>` : `<span class="cursor"></span>`;
   } else {
     bubble.innerHTML = answerHtml(m);
     if (streaming) bubble.classList.add("cursor"); else bubble.classList.remove("cursor");
   }
-  el.querySelector(".meta-text").textContent = m.meta || (streaming ? "" : m.stopped ? "Stopped" : "");
+  el.querySelector(".meta-text").textContent = m.meta || (streaming ? "" : m.stopped ? "已停止" : "");
   el.querySelector("[data-msg-copy]").hidden = streaming || !m.text;
 }
 function renderChat() {
@@ -768,7 +1057,7 @@ function assistantMessages(m) {
 function setBusy(on) {
   $("stop-btn").hidden = !on;
   $("send-btn").disabled = on;
-  $("composer-hint").textContent = on ? "" : "Shift+Enter: new line";
+  $("composer-hint").textContent = on ? "" : "Shift+Enter 换行";
 }
 
 async function send() {
@@ -808,7 +1097,7 @@ async function send() {
     if (!r.ok) {
       let msg = `HTTP ${r.status}`;
       try { msg = (await r.json()).error.message || msg; } catch (e) { /* not json */ }
-      if (r.status === 401) msg = "This server needs an API key: add it under About > Settings.";
+      if (r.status === 401) msg = "请在“关于与设置 → 网页设置”中填写 API 密钥。";
       throw new Error(msg);
     }
     const reader = r.body.getReader(), dec = new TextDecoder();
@@ -826,7 +1115,7 @@ async function send() {
         if (data === "[DONE]") continue;
         let j;
         try { j = JSON.parse(data); } catch (e) { continue; }
-        if (j.error) throw new Error(j.error.message || "the engine reported an error");
+        if (j.error) throw new Error(j.error.message || "引擎返回错误");
         if (j.usage) usage = j.usage;
         if (j.strata_mcp) onTool(m, j.strata_mcp);
         const d = (j.choices && j.choices[0] && j.choices[0].delta) || {};
@@ -848,21 +1137,21 @@ async function send() {
     }
   } catch (e) {
     if (e.name === "AbortError") m.stopped = true;
-    else { m.error = e.message || String(e); toast("error", "The request failed", m.error, 6000); }
+    else { m.error = e.message || String(e); toast("error", "请求失败", m.error, 6000); }
   }
   if (thinkStart && m.thinkSecs == null) m.thinkSecs = (performance.now() - thinkStart) / 1000;
   const n = usage ? usage.completion_tokens : null;
   if (n && firstAt) {
     const secs = (performance.now() - firstAt) / 1000;
-    m.meta = `${fmt(n)} tokens${secs > 0.25 ? ` · ${fmt(n / secs, 1)} tok/s` : ""}${m.stopped ? " · stopped" : ""}` +
-             (projectionLoaded() ? (settings.esp ? " · projection on" : " · projection off") : "");
+    m.meta = `${fmt(n)} tokens${secs > 0.25 ? ` · ${fmt(n / secs, 1)} tok/s` : ""}${m.stopped ? " · 已停止" : ""}` +
+             (projectionLoaded() ? (settings.esp ? " · 投影开启" : " · 投影关闭") : "");
   } else if (m.stopped) {
-    m.meta = "Stopped";
+    m.meta = "已停止";
   }
   for (const t of m.tools || []) if (t.state === "writing" || t.state === "running") { t.state = "skipped"; t.ms = null; }
   const ran = (m.tools || []).filter((t) => t.state === "done" || t.state === "error").length;
-  if (ran) m.meta = `${m.meta ? `${m.meta} · ` : ""}${ran} tool call${ran > 1 ? "s" : ""}`;
-  if (m.limit) m.meta = `${m.meta || ""} · stopped at the limit of ${m.limit} tool rounds (mcp.max_rounds)`;
+  if (ran) m.meta = `${m.meta ? `${m.meta} · ` : ""}${ran} 次工具调用`;
+  if (m.limit) m.meta = `${m.meta || ""} · 达到 ${m.limit} 轮工具调用上限（mcp.max_rounds）`;
   busy = null;
   setBusy(false);
   if (frame) cancelAnimationFrame(frame);
@@ -880,21 +1169,21 @@ function autosize() { const t = $("input"); t.style.height = "auto"; t.style.hei
 $("input").addEventListener("input", autosize);
 
 $("new-btn").onclick = () => {
-  if (busy) { toast("warn", "Still writing", "Stop the answer first."); return; }
+  if (busy) { toast("warn", "仍在生成", "请先停止当前回答。"); return; }
   if (!messages.length) return;
   const backup = messages;
   messages = [];
   saveChat();
   renderChat();
-  toast("info", "New chat", "The last one was cleared.", 6000, {label: "Undo", run: () => { messages = backup; saveChat(); renderChat(); }});
+  toast("info", "新建对话", "已清空上一段对话。", 6000, {label: "撤销", run: () => { messages = backup; saveChat(); renderChat(); }});
 };
 $("export-btn").onclick = () => {
-  if (!messages.length) { toast("info", "Nothing to save yet"); return; }
+  if (!messages.length) { toast("info", "暂无可导出的对话"); return; }
   const tools = (m) => (m.tools || []).filter((t) => t.result != null).map((t) =>
-    `<details><summary>Tool ${t.server ? `${t.server} / ` : ""}${t.tool || t.name}${t.ok ? "" : " (error)"}</summary>\n\n` +
+    `<details><summary>工具 ${t.server ? `${t.server} / ` : ""}${t.tool || t.name}${t.ok ? "" : "（错误）"}</summary>\n\n` +
     `\`\`\`json\n${JSON.stringify(t.arguments || {}, null, 2)}\n\`\`\`\n\n\`\`\`\n${t.result}\n\`\`\`\n\n</details>\n\n`).join("");
-  const md = messages.map((m) => m.role === "user" ? `## You\n\n${m.text}\n` :
-    `## ${health.model}\n\n${m.reasoning ? `<details><summary>Thinking</summary>\n\n${m.reasoning}\n\n</details>\n\n` : ""}${tools(m)}${m.text || m.error || ""}\n`).join("\n");
+  const md = messages.map((m) => m.role === "user" ? `## 你\n\n${m.text}\n` :
+    `## ${health.model}\n\n${m.reasoning ? `<details><summary>思考过程</summary>\n\n${m.reasoning}\n\n</details>\n\n` : ""}${tools(m)}${m.text || m.error || ""}\n`).join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([md], {type: "text/markdown"}));
   a.download = `strata-chat-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.md`;
@@ -912,19 +1201,19 @@ function isTextFile(f) {
 function addFiles(files) {
   for (const f of files) {
     if (f.type.startsWith("image/")) {
-      if (!health.images) { toast("warn", "Pictures are off", "This model was set up for text only."); continue; }
-      if (f.size > 20e6) { toast("warn", "Picture too large", `${f.name} is over 20 MB.`); continue; }
+      if (!health.images) { toast("warn", "未启用图片识别", "当前模型配置只支持文字。"); continue; }
+      if (f.size > 20e6) { toast("warn", "图片过大", `${f.name} 超过 20 MB。`); continue; }
       const r = new FileReader();
-      r.onload = () => { attachments.push({kind: "image", name: f.name || "pasted image", url: r.result}); renderAttachments(); };
+      r.onload = () => { attachments.push({kind: "image", name: f.name || "粘贴的图片", url: r.result}); renderAttachments(); };
       r.readAsDataURL(f);
       continue;
     }
-    if (!isTextFile(f)) { toast("warn", "Not a text file", `${f.name}: attach text files (code, notes, logs, data)${health.images ? " or pictures" : ""}.`); continue; }
-    if (f.size > MAX_TEXT_FILE) { toast("warn", "File too large", `${f.name} is over 512 KB.`); continue; }
+    if (!isTextFile(f)) { toast("warn", "不是文本文件", `${f.name}：请添加文本文件（代码、笔记、日志、数据）${health.images ? "或图片" : ""}。`); continue; }
+    if (f.size > MAX_TEXT_FILE) { toast("warn", "文件过大", `${f.name} 超过 512 KB。`); continue; }
     const r = new FileReader();
     r.onload = () => {
       const text = String(r.result);
-      if (text.includes("\u0000")) { toast("warn", "Not a text file", `${f.name} looks like a binary file.`); return; }
+      if (text.includes("\u0000")) { toast("warn", "不是文本文件", `${f.name} 似乎是二进制文件。`); return; }
       attachments.push({kind: "file", name: f.name, text});
       renderAttachments();
     };
@@ -951,7 +1240,7 @@ function renderAttachments() {
     c.innerHTML = icon(a.kind === "file" ? "attach" : "image", "st-icon st-icon--sm");
     c.append(a.name);
     const x = document.createElement("button");
-    x.type = "button"; x.className = "st-btn st-btn--icon"; x.setAttribute("aria-label", "Remove");
+    x.type = "button"; x.className = "st-btn st-btn--icon"; x.setAttribute("aria-label", "移除");
     x.innerHTML = icon("trash");
     x.onclick = () => { attachments.splice(i, 1); renderAttachments(); };
     c.appendChild(x);
@@ -1035,11 +1324,11 @@ function projectionLoaded() {
 }
 function outputs() {
   const t = +$("s-temp").value;
-  $("o-temp").textContent = t === 0 ? "0 · greedy" : t.toFixed(2);
+  $("o-temp").textContent = t === 0 ? "0 · 贪心采样" : t.toFixed(2);
   $("o-topp").textContent = (+$("s-topp").value).toFixed(2);
   $("o-topk").textContent = $("s-topk").value;
   const sel = [...$("s-thinking").children].find((b) => b.getAttribute("aria-checked") === "true");
-  $("o-thinking").textContent = sel ? {none: "answers right away", low: "short", medium: "medium", high: "thorough (default)"}[sel.dataset.v] : "";
+  $("o-thinking").textContent = sel ? {none: "直接回答", low: "简短思考", medium: "适度思考", high: "充分思考（默认）"}[sel.dataset.v] : "";
   for (const id of ["s-topp", "s-topk"]) $(id).disabled = t === 0;
 }
 for (const b of $("s-thinking").children) b.onclick = () => { for (const x of $("s-thinking").children) x.setAttribute("aria-checked", String(x === b)); outputs(); };
@@ -1062,14 +1351,14 @@ $("s-apply").onclick = async () => {
   if (share || sharedOn) {
     try {
       await saveShared(share, settings);
-      toast("success", "Sampling saved", share ? "Other apps (omp, API clients) use these settings from their next request."
-                                               : "Other apps use their own settings again.");
+      toast("success", "采样设置已保存", share ? "其他 API 客户端从下一条请求开始使用这些默认设置。"
+                                               : "其他客户端恢复使用各自的设置。");
     } catch (e) {
-      toast("error", "Saved here, but not for other apps", e.message, 6000);
+      toast("error", "已保存在浏览器，但共享设置保存失败", e.message, 6000);
     }
     return;
   }
-  toast("success", "Sampling saved", settings.temperature === 0 ? "Greedy: the same question gives the same answer." : "");
+  toast("success", "采样设置已保存", settings.temperature === 0 ? "已启用贪心采样。" : "");
 };
 $("sampling-btn").onclick = () => openDrawer(true);
 $("drawer-close").onclick = () => openDrawer(false);

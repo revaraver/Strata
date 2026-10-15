@@ -73,9 +73,71 @@ class CarryOver(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(cfg["model_name"], first["model_name"])
         self.assertEqual(cfg["port"], first["port"])
-        self.assertNotIn("host", cfg)                                     # as before: --host is given to setup
+        self.assertEqual(cfg["host"], "0.0.0.0")                         # network settings survive unless overridden
         self.assertEqual(cfg["draft_vocab"], "en")                        # kept by its own rule (saved_draft_vocab)
-        self.assertNotIn("kept from", out)
+        self.assertIn("kept from your earlier strata-q2_0.json: host", out)
+
+    def test_runtime_settings_survive_setup(self):
+        code, out, first, _ = self.run_setup("--context", "262144")
+        self.assertEqual(code, 0, out)
+        args = list(first["args"])
+        args[args.index("--prefill") + 1] = "auto:32768"
+        args += ["--vram-reserve-mib", "4096", "--conversation-cache-mib", "32768",
+                 "--conversation-cache-slots", "8", "--conversation-cache-min-free-mib", "8192",
+                 "--batch-mtp"]
+        old = {**first, "args": args, "parallel": 2, "reasoning_budget_tokens": 2048,
+               "host": "0.0.0.0", "api_key": "test-key"}
+        code, out, cfg, _ = self.run_setup("--context", "131072", configs=[("strata-q2_0.json", old)])
+        self.assertEqual(code, 0, out)
+        for flag, value in (("--prefill", "auto:32768"), ("--vram-reserve-mib", "4096"),
+                            ("--conversation-cache-mib", "32768"), ("--conversation-cache-slots", "8"),
+                            ("--conversation-cache-min-free-mib", "8192")):
+            self.assertEqual(setup.flag_value(cfg["args"], flag), value, flag)
+            self.assertEqual(cfg["args"].count(flag), 1, flag)
+        self.assertIn("--batch-mtp", cfg["args"])
+        self.assertEqual(setup.flag_value(cfg["args"], "--max-context"), "131072")
+        self.assertEqual(cfg["parallel"], 2)
+        self.assertEqual(cfg["reasoning_budget_tokens"], 2048)
+        self.assertEqual(cfg["host"], old["host"])
+        self.assertEqual(cfg["api_key"], old["api_key"])
+        self.assertNotIn("test-key", out)
+
+    def test_explicit_runtime_overrides_win(self):
+        code, out, first, _ = self.run_setup()
+        self.assertEqual(code, 0, out)
+        old = {**first, "args": first["args"] + ["--vram-reserve-mib", "4096", "--batch-mtp"],
+               "parallel": 2, "host": "0.0.0.0", "api_key": "old-test-key"}
+        code, out, cfg, _ = self.run_setup("--vram-reserve-mib", "2048", "--parallel", "1",
+                                         "--host", "127.0.0.1", "--api-key", "new-test-key",
+                                         configs=[("strata-q2_0.json", old)])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(setup.flag_value(cfg["args"], "--vram-reserve-mib"), "2048")
+        self.assertEqual(cfg["args"].count("--vram-reserve-mib"), 1)
+        self.assertEqual(cfg["parallel"], 1)
+        self.assertNotIn("--batch-mtp", cfg["args"])
+        self.assertEqual(cfg["host"], "127.0.0.1")
+        self.assertEqual(cfg["api_key"], "new-test-key")
+
+    def test_cache_off_and_idempotent_save(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "strata-x.json"
+            old = {"exe": "old-engine", "parallel": 2, "args": ["--prefill", "auto:32768",
+                   "--vram-reserve-mib", "4096", "--conversation-cache-mib", "0",
+                   "--conversation-cache-slots", "8", "--batch-mtp"]}
+            p.write_text(json.dumps(old), encoding="utf-8")
+            generated = lambda: {"exe": "e", "args": ["--prefill", "auto", "--vram-reserve-mib", "700"]}
+            quiet(setup.write_setup_config, p, generated())
+            got = json.loads(p.read_text(encoding="utf-8"))
+            self.assertEqual(setup.flag_value(got["args"], "--conversation-cache-mib"), "0")
+            self.assertEqual(got["args"].count("--batch-mtp"), 1)
+            self.assertEqual(setup.flag_value(got["args"], "--prefill"), "auto:32768")
+            self.assertEqual(setup.flag_value(got["args"], "--vram-reserve-mib"), "4096")
+            backup = p.with_name(p.name + ".bak")
+            self.assertEqual(json.loads(backup.read_text(encoding="utf-8")), old)
+            backup.unlink()
+            quiet(setup.write_setup_config, p, generated())
+            self.assertEqual(json.loads(p.read_text(encoding="utf-8")), got)
+            self.assertFalse(backup.exists())
 
     def test_write_setup_config(self):
         with tempfile.TemporaryDirectory() as d:

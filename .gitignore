@@ -21,6 +21,8 @@ __pycache__/
 
 # Pi harness metadata (local session state, not project source)
 *.sqlite
+*.sqlite-wal
+*.sqlite-shm
 *.npz
 *.occ1
 td.log
@@ -49,10 +51,26 @@ build-vision-cuda12.bat
 # setup.py outputs (engine, downloads) and release builds
 /engine/
 /engine-cuda12/
+/local-upgrade/translation-candidates/
+/local-upgrade/conversion-runtime/
 /build-release*/
 /dist/
 *.done
 /third_party/*.zip
+
+# 本地调试产物：配置备份、校准前快照、wrapper 输出，都不是源码
+*.bak
+*.before-calibration-*
+*.before-arena-test
+*.before-sync-*
+*.wrapper.out
+*.wrapper.err
+
+# 本地升级/调优工作区（含引擎 zip 备份、逐次实验目录，180MB+，不进 git）
+/local-upgrade/
+
+# 个人备忘
+/setup命令.txt
 
 # IDEs
 .vscode/

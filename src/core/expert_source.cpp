@@ -1499,7 +1499,9 @@ void FileExpertSource::prefetch(int64_t layer, const int64_t* experts, int64_t n
 }
 
 void FileExpertSource::prefetch_pairs(const std::pair<int32_t, int32_t>* pairs, int64_t n) {
-    if (direct_.empty() || pairs == nullptr || n <= 0) return;   // unbuffered only: the mapped fill stays as it was
+    // Startup may also batch native GGUF assembly through the mapped file tier.
+    // fill_many supplies Windows range prefetch and bounded parallel copies.
+    if (!staged() || pairs == nullptr || n <= 0) return;
     std::vector<Fill> todo;
     {
         std::lock_guard<std::mutex> lk(stage_mu_);
@@ -2740,14 +2742,19 @@ bool FileExpertSource::pin_cache_complement(
                      (double) budget_bytes / 1073741824.0, (long long) held, (double) bytes / 1073741824.0);
         offsets.swap(ranked);
         bytes = at;
-        lend_from_slot = -1;
+        // A RAM budget chooses the fixed complement first, but it must not disable the
+        // prompt lend region.  If the chunk lends cache slots, choose_resident_keep_from()
+        // below keeps as many of those slot experts in the same RAM budget as fit; the
+        // remainder stays on the mapped file tier.  Disabling lend here made every lent
+        // expert reload from the model files on every prompt chunk even when host RAM was free.
     }
 
     const bool lend = lend_from_slot >= 0 && lend_from_slot < n_slots && additional_gpu_pairs.empty();
     uint64_t budget = std::numeric_limits<uint64_t>::max();
     if (bytes > 0 || lend) {
-        // #403: with a budget, the reading it was sized from - a second reading a few MB lower (the engine's own
-        // allocations, the file cache) failed a budget the first one had clamped.  (A budget turns `lend` off.)
+        // #403: with a budget, reuse the memory snapshot it was sized from - a second reading a few MB lower
+        // (the engine's own allocations, the file cache) could fail a budget the first one had clamped.  The
+        // prompt lend region remains active; the same budget is shared by the fixed and lendable RAM copies.
         uint64_t physical = budget_physical;
         uint64_t commit = budget_commit;
         if (physical == 0 && !available_memory_bytes(physical, &commit)) {

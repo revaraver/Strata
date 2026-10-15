@@ -2991,7 +2991,7 @@ class WebApp(unittest.TestCase):
         code, ctype, body = self.get("/")
         self.assertEqual(code, 200)
         self.assertIn("text/html", ctype)
-        self.assertIn(b"\"web/app.js\"", body)   # relative since #82 (works behind a path-prefixed proxy)
+        self.assertIn(b"\"web/app.js", body)   # relative since #82 (works behind a path-prefixed proxy); ?v= cache-buster allowed
         for path, want in (("/web/app.js", "javascript"), ("/web/app.css", "text/css"), ("/web/tokens.css", "text/css"),
                            ("/web/components.css", "text/css"), ("/web/sprite.svg", "image/svg+xml")):
             with self.subTest(path=path):
@@ -4386,6 +4386,98 @@ class ModelAliases(unittest.TestCase):
         finally:
             httpd.shutdown()
             httpd.server_close()
+
+
+class ModelProfiles(unittest.TestCase):
+    """分身模型: other names for the same loaded model, each with its own thinking policy.  An explicit setting
+    overrides the client and the shared settings; absent fields inherit, like plain aliases (kept separate)."""
+
+    @classmethod
+    def setUpClass(cls):
+        tok = ByteTokenizer()
+        cls.svc = Service(MockEngine(tok, "</think>\n\nok", max_context=CTX), tok,
+                          ChatTemplate(ROOT / "serve/chat_template.jinja"), model_name="strata-base")
+        cls.svc.set_aliases(["plain-alias"])
+        cls.svc.set_model_profiles([
+            {"name": "strata-compress", "thinking": "off"},
+            {"name": "strata-budget", "reasoning_budget_tokens": 512, "reasoning_effort": "low"},
+        ])
+        cls.httpd = serve(cls.svc, port=0)
+        cls.base = f"http://127.0.0.1:{cls.httpd.server_address[1]}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+
+    def get(self, path):
+        with urllib.request.urlopen(self.base + path, timeout=30) as r:
+            return json.loads(r.read())
+
+    def post(self, path, body):
+        req = urllib.request.Request(self.base + path, data=json.dumps(body).encode(),
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read())
+
+    def test_models_lists_profiles_with_their_policy(self):
+        by = {m["id"]: m for m in self.get("/v1/models")["data"]}
+        self.assertEqual(by["strata-compress"]["alias_of"], "strata-base")
+        self.assertEqual(by["strata-compress"]["profile"], {"thinking": "off"})
+        self.assertEqual(by["strata-budget"]["profile"], {"reasoning_budget_tokens": 512, "reasoning_effort": "low"})
+        self.assertIn("plain-alias", by)
+        self.assertNotIn("profile", by["plain-alias"])
+        self.assertEqual(self.get("/props?model=strata-compress")["model_alias"], "strata-base")
+
+    def test_answered_under_the_profile_name(self):
+        out = self.post("/v1/chat/completions", {"model": "strata-compress", "messages": [{"role": "user", "content": "hi"}],
+                                                 "max_tokens": 8})
+        self.assertEqual(out["model"], "strata-compress")
+        out = self.post("/v1/messages", {"model": "strata-budget", "messages": [{"role": "user", "content": "hi"}],
+                                         "max_tokens": 8})
+        self.assertEqual(out["model"], "strata-budget")
+
+    def test_thinking_off_overrides_the_client(self):
+        from serve.frontend import openai_to_messages, anthropic_to_messages
+        req = self.svc.with_shared({"model": "strata-compress", "reasoning_effort": "high", "messages": []}, "openai")
+        self.assertEqual(req["reasoning_effort"], "none")
+        self.assertEqual(openai_to_messages(req)[2], {"enable_thinking": False})
+        a = self.svc.with_shared({"model": "strata-compress", "output_config": {"effort": "high"}}, "anthropic")
+        self.assertEqual(a["thinking"], {"type": "disabled"})
+        self.assertNotIn("output_config", a)
+        self.assertEqual(anthropic_to_messages({**a, "messages": [{"role": "user", "content": "x"}], "max_tokens": 8})[2],
+                         {"enable_thinking": False})
+
+    def test_budget_and_effort_override_the_client(self):
+        self.assertEqual(self.svc.reasoning_budget({"model": "strata-budget", "reasoning_budget_tokens": 4096}), 512)
+        req = self.svc.with_shared({"model": "strata-budget", "reasoning_effort": "high", "messages": []}, "openai")
+        self.assertEqual(req["reasoning_effort"], "low")
+        # the base model and plain aliases keep the client's own values
+        self.assertEqual(self.svc.reasoning_budget({"model": "plain-alias", "reasoning_budget_tokens": 4096}), 4096)
+        self.assertEqual(self.svc.with_shared({"model": "strata-base", "reasoning_effort": "high",
+                                               "messages": []}, "openai")["reasoning_effort"], "high")
+
+    def test_responses_template_respects_the_profile(self):
+        from serve import responses as responses_api
+        self.assertEqual(responses_api.template_kwargs({}, {}, self.svc.profile_for({"model": "strata-compress"})),
+                         {"enable_thinking": False})
+        self.assertEqual(responses_api.template_kwargs({"reasoning": {"effort": "high"}}, {},
+                                                       self.svc.profile_for({"model": "strata-budget"})),
+                         {"reasoning_effort": "low"})
+        self.assertEqual(responses_api.template_kwargs({"reasoning": {"effort": "high"}}, {}, None),
+                         {"reasoning_effort": "xhigh"})
+
+    def test_validation(self):
+        for bad in ([{"name": "strata-base"}], [{"name": "plain-alias"}], [{"name": "x", "thinking": "maybe"}],
+                    [{"name": "x", "reasoning_budget_tokens": -1}], [{"name": "x", "reasoning_effort": "ultra"}],
+                    [{"name": "x"}, {"name": "x"}], "nope"):
+            with self.assertRaises(ValueError):
+                self.svc.set_model_profiles(bad)
+        self.svc.set_model_profiles(None)
+        self.assertEqual(self.svc.model_profiles, {})
+        self.svc.set_model_profiles([{"name": "strata-compress", "thinking": "off"},
+                                     {"name": "strata-budget", "reasoning_budget_tokens": 512,
+                                      "reasoning_effort": "low"}])
 
 
 class AmdTelemetry(unittest.TestCase):

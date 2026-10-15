@@ -90,9 +90,16 @@ def _reasoning_text(item, param) -> str:
     alone, or another server's encrypted_content, carries none that can go back into the prompt."""
     texts = [p.get("text") or "" for p in item.get("content") or [] if isinstance(p, dict)
              and p.get("type") in ("reasoning_text", "text")]
+    enc = item.get("encrypted_content")
+    if texts and isinstance(enc, str) and enc.startswith(ENCRYPTED_PREFIX):
+        try:
+            original = json.loads(base64.b64decode(enc[len(ENCRYPTED_PREFIX):], validate=True).decode("utf-8"))
+            if isinstance(original, dict) and isinstance(original.get("text"), str) and original.get("display_text") == "".join(texts):
+                return original["text"]  # translated display, original English continuation
+        except (ValueError, KeyError, TypeError, UnicodeError):
+            pass  # legacy behavior: explicit content is still usable
     if texts:
         return "".join(texts)
-    enc = item.get("encrypted_content")
     if isinstance(enc, str) and enc.startswith(ENCRYPTED_PREFIX):
         try:
             return json.loads(base64.b64decode(enc[len(ENCRYPTED_PREFIX):], validate=True).decode("utf-8"))["text"]
@@ -454,9 +461,13 @@ def check_request(req: dict) -> None:
         raise ResponsesError("reasoning must be an object", "reasoning")
 
 
-def template_kwargs(req: dict, shared: dict) -> dict:
+def template_kwargs(req: dict, shared: dict, profile: dict | None = None) -> dict:
+    if profile is not None and profile.get("thinking") == "off":
+        return {"enable_thinking": False}             # the 分身's policy wins over the client
     effort = (req.get("reasoning") or {}).get("effort")
-    if effort is None:
+    if profile is not None and profile.get("reasoning_effort"):
+        effort = profile["reasoning_effort"]          # the 分身's policy wins over the client
+    elif effort is None:
         effort = shared.get("reasoning_effort")      # the Chat settings shared with apps, as on the chat path
     try:
         return effort_kwargs(effort)
@@ -477,6 +488,7 @@ class Assembler:
         self.item = None                             # the open output item
         self.json_text = []                          # structured output: the answer, held until it is checked
         self.called = False                          # a tool call was made: this turn is not the final answer
+        self.reasoning_original = []                 # original text, separate from display-only translation
         reasoning = req.get("reasoning") if isinstance(req.get("reasoning"), dict) else {}
         self.response = {
             "id": new_id("resp"), "object": "response", "created_at": int(time.time()), "status": "in_progress",
@@ -540,8 +552,10 @@ class Assembler:
             out.append(self.event("response.reasoning_text.done", item_id=item["id"], output_index=at,
                                   content_index=0, text=text))
             if self.encrypted:
+                original = "".join(self.reasoning_original)
                 item["encrypted_content"] = ENCRYPTED_PREFIX + base64.b64encode(
-                    json.dumps({"text": text}, ensure_ascii=False).encode("utf-8")).decode("ascii")
+                    json.dumps({"text": original, **({"display_text": text} if original != text else {})},
+                               ensure_ascii=False).encode("utf-8")).decode("ascii")
         elif item["type"] == "function_call":
             out.append(self.event("response.function_call_arguments.done", item_id=item["id"], output_index=at,
                                   name=item["name"], arguments=item["arguments"]))
@@ -559,8 +573,10 @@ class Assembler:
                 return out
             if self.item is None or self.item["type"] != "reasoning":
                 out += self.close()
+                self.reasoning_original = []
                 out += self._open({"id": new_id("rs"), "type": "reasoning", "status": "in_progress", "summary": [],
                                    "content": [{"type": "reasoning_text", "text": ""}]})
+            self.reasoning_original.append(ev.text if ev.original_text is None else ev.original_text)
             self.item["content"][0]["text"] += ev.text
             out.append(self.event("response.reasoning_text.delta", item_id=self.item["id"], output_index=self.index,
                                   content_index=0, delta=ev.text))
