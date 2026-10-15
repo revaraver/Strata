@@ -186,6 +186,24 @@ class Lifecycle(unittest.TestCase):
         self.assertEqual(code, 503)
         self.assertIn("the next request restarts it", body["error"]["message"])
 
+    def test_zero_speed_offload_parks_then_the_next_request_restores(self):
+        # "卸载" = park at the zero reserve; the request that wakes the engine restores the mode it was in
+        calls = []
+        self.engine.loaded = True
+        self.engine.vram = lambda r: calls.append(r) or {"vram_free_mib": 1, "expert_cache_mib": 1}
+        self.svc.vram_reserve, self.svc.vram_reserve_asked = 4096, True
+        self.assertEqual(self.svc.vram(45056, auto_restore=True)["status"], "ok")
+        self.assertEqual(self.svc.vram_auto_restore, 4096)          # parked, waiting for the next request
+        self.svc._restore_vram_mode()
+        self.assertEqual(calls, [45056, 4096])                      # restored to high speed, one-shot
+        self.assertIsNone(self.svc.vram_auto_restore)
+        self.svc._restore_vram_mode()
+        self.assertEqual(calls, [45056, 4096])                      # never restores twice
+        self.assertEqual(self.svc.vram(45056)["status"], "ok")      # the plain zero switch never restores
+        self.assertIsNone(self.svc.vram_auto_restore)
+        self.svc._restore_vram_mode()
+        self.assertEqual(calls, [45056, 4096, 45056])
+
     def test_explicit_load_and_model_matching(self):
         self.assertEqual(self.request("/v1/load", {"model": "other-model"})[0], 404)
         self.assertEqual(self.engine.starts, 0)

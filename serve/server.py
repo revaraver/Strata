@@ -3099,6 +3099,7 @@ class Service:
         self.before_load_strict = False                  # #1997: refuse (503) whenever it fails
         self.vram_reserve = None                         # #533: the last POST /v1/vram reserve (None: the start's)
         self.vram_reserve_asked = False                  # a POST /v1/vram was made (vram_reserve None is then asked)
+        self.vram_auto_restore = None                    # "卸载(零速)": the reserve the next request restores
         self.vision_held = False                         # an elastic encoder holds VRAM the expert cache gave it
         self.last_image_at = 0.0                         # when an image turn last ended (the elastic encoder's idle)
         self.reasoning_loop_recovery = False
@@ -3499,10 +3500,25 @@ class Service:
                 self.engine.vram(self.vram_reserve)
             except (ValueError, EngineDied) as e:
                 print(f"[strata] the VRAM reserve ({self.vram_reserve} MiB) was not applied: {e}", flush=True)
+        self._restore_vram_mode()
+
+    def _restore_vram_mode(self):
+        """A "卸载(零速)" parked the engine at the zero reserve; the request that wakes it restores the mode it
+        was in (high/mid).  The caller holds the fifo; the engine is loaded here.  One-shot."""
+        if self.vram_auto_restore is None or not self.loaded() or not hasattr(self.engine, "vram"):
+            return
+        want, self.vram_auto_restore = self.vram_auto_restore, None
+        try:
+            out = self.engine.vram(want)
+            self.vram_reserve = want
+            print(f"[strata] VRAM: the request restored the mode's reserve ({want} MiB): {out.get('vram_free_mib')} "
+                  f"MiB free, expert cache {out.get('expert_cache_mib')} MiB", flush=True)
+        except (ValueError, EngineDied) as e:
+            print(f"[strata] the VRAM mode restore ({want} MiB) was not applied: {e}", flush=True)
 
     vram_wait_s = 300.0                                  # #533: how long POST /v1/vram waits for a running request
 
-    def vram(self, reserve_mib: int | None) -> dict:
+    def vram(self, reserve_mib: int | None, auto_restore: bool = False) -> dict:
         """#533, POST /v1/vram: keep `reserve_mib` of VRAM free for other programs (None: the reserve the engine
         started with), applied between requests - a request that is running finishes first (up to wait_s).  Only an
         engine started with --vram-elastic (the config's "vram_elastic": true) can do it; it never resizes on its own.
@@ -3517,14 +3533,18 @@ class Service:
         if ctl is not None and not ctl.acquire(timeout=self.vram_wait_s):
             self.fifo.release()
             raise ModelBusy("a request is still running; try again when it has finished")
+        mode_before = self.vram_reserve if self.vram_reserve_asked else None   # the mode to come back to
         try:
             if not self.loaded():
                 self.vram_reserve, self.vram_reserve_asked = reserve_mib, True
+                self.vram_auto_restore = None
                 return {"status": "not loaded", "reserve_mib": reserve_mib,
                         "note": "applied when the model loads"}
             # an elastic encoder that runs keeps its VRAM on top of the asked reserve
             out = self.engine.vram((reserve_mib or 0) + self.vision.elastic_mib if self.vision_held else reserve_mib)
             self.vram_reserve, self.vram_reserve_asked = reserve_mib, True
+            # "卸载(零速)": park at this reserve until a request arrives, which restores the mode before it
+            self.vram_auto_restore = mode_before if auto_restore else None
             print(f"[strata] VRAM: {out.get('vram_free_mib')} MiB free, expert cache {out.get('expert_cache_mib')} of "
                   f"{out.get('expert_cache_full_mib')} MiB ({out.get('expert_slots')} experts)", flush=True)
             return {"status": "ok", **out}
@@ -3901,6 +3921,7 @@ class Service:
                          "last_request_at": int(last_at) if last_at else None},
             "last_timings": last_t,
             "vram": dict((getattr(self.engine, "info", {}) or {}).get("vram") or {},
+                         auto_restore=self.vram_auto_restore,
                          elastic=bool((getattr(self.engine, "info", {}) or {}).get("vram_elastic"))),
             "machine": {
                 "at": int(time.time()),
@@ -5666,8 +5687,11 @@ def make_handler(svc: Service):
                     r = req.get("reserve_mib")
                     if r is not None and (isinstance(r, bool) or not isinstance(r, int) or r < 0):
                         raise ValueError("reserve_mib: a whole number of MiB (0 or more), or null for the start's")
+                    ar = req.get("auto_restore")
+                    if ar is not None and not isinstance(ar, bool):
+                        raise ValueError("auto_restore: true or false")
                     try:
-                        self._json(200, svc.vram(r))
+                        self._json(200, svc.vram(r, auto_restore=bool(ar)))
                     except EngineDied as e:
                         self._json(503, {"error": {"type": "server_error", "message": str(e)}})
                     return

@@ -233,23 +233,26 @@ function renderConvCache(c) {
 }
 
 // ------------------------------------------------------------------ 显存模式浮窗（#533 的界面）
-const VF = {fast: store.get("vram_fast_mib", 4096), mid: store.get("vram_mid_mib", 32768), busy: false};
+const VF = {fast: store.get("vram_fast_mib", 4096), mid: store.get("vram_mid_mib", 32768), zero: store.get("vram_zero_mib", 45056), last: null, restore: null, busy: false};
 $("vf-fast-mib").value = VF.fast;
 $("vf-mid-mib").value = VF.mid;
 $("vf-fast-mib").onchange = () => { VF.fast = Math.max(0, parseInt($("vf-fast-mib").value || "0", 10));
   $("vf-fast-mib").value = VF.fast; store.set("vram_fast_mib", VF.fast); };
 $("vf-mid-mib").onchange = () => { VF.mid = Math.max(0, parseInt($("vf-mid-mib").value || "0", 10));
   $("vf-mid-mib").value = VF.mid; store.set("vram_mid_mib", VF.mid); };
+$("vf-zero-mib").value = VF.zero;
+$("vf-zero-mib").onchange = () => { VF.zero = Math.max(0, parseInt($("vf-zero-mib").value || "0", 10));
+  $("vf-zero-mib").value = VF.zero; store.set("vram_zero_mib", VF.zero); };
 async function vfPost(path, body) {
   if (VF.busy) return;
   VF.busy = true; $("vram-float").querySelectorAll("button").forEach(b => b.disabled = true);
   try {
-    const r = await fetch(path, {method: "POST", headers: headers(true), body: body ? JSON.stringify(body) : ""});
+    const r = await fetch(path, {method: "POST", headers: headers(true), body: JSON.stringify(body || {})});
     const j = await r.json().catch(() => ({}));
     if (!r.ok) toast("error", "操作失败", (j.error && j.error.message) || `HTTP ${r.status}`, 6000);
     else if (j.status === "busy") toast("warn", "模型正忙", "等当前请求结束后再试。");
     else if (j.status === "not loaded") toast("info", "已记录", "模型未加载；这条预留会在下次加载时生效。");
-    else toast("success", path === "unload" ? "已卸载" : "显存已调整",
+    else toast("success", path === "unload" ? "已完全卸载" : "显存已调整",
                j.vram_free_mib != null ? `现在空闲 ${fmt(j.vram_free_mib / 1024, 1)} GB` : (j.note || ""));
   } catch (e) { toast("error", "无法连接服务", String(e)); }
   VF.busy = false;
@@ -257,6 +260,10 @@ async function vfPost(path, body) {
 }
 $("vf-fast").onclick = () => vfPost("v1/vram", {reserve_mib: VF.fast});
 $("vf-mid").onclick = () => vfPost("v1/vram", {reserve_mib: VF.mid});
+$("vf-zero").onclick = () => vfPost("v1/vram", {reserve_mib: VF.zero});
+$("vf-zero-offload").onclick = () => {   // 卸载 = 零速 + 记住当前档位；下一条对话自动恢复，没记住就回高速
+  VF.restore = VF.last != null && VF.last !== VF.zero ? VF.last : VF.fast;
+  vfPost("v1/vram", {reserve_mib: VF.zero, auto_restore: VF.restore}); };
 $("vf-unload").onclick = () => vfPost("unload");
 function renderVramCard(m) {
   const show = tab === "monitor" || tab === "about";
@@ -265,14 +272,18 @@ function renderVramCard(m) {
   const live = m.live || {}, eng = m.engine || {}, v = eng.vram || {};
   const unloaded = live.state === "unloaded";
   const r = v.reserve_mib;
+  if (r != null && r !== VF.zero) VF.last = r;   // 卸载(零速)要知道"之前的档位"是什么
   let mode = "默认", on = "";
   if (unloaded) mode = "已卸载";
   else if (r != null && r === VF.fast) { mode = "高速"; on = "vf-fast"; }
   else if (r != null && r === VF.mid) { mode = "中速"; on = "vf-mid"; }
+  else if (r != null && r === VF.zero) { mode = v.auto_restore != null ? "已卸载（下一条对话自动恢复）" : "零速"; on = v.auto_restore != null ? "vf-zero-offload" : "vf-zero"; }
   else if (r != null) mode = `自定义 ${r} MiB`;
   $("vf-mode").textContent = mode;
   $("vf-fast").dataset.on = on === "vf-fast" ? "1" : "0";
   $("vf-mid").dataset.on = on === "vf-mid" ? "1" : "0";
+  $("vf-zero").dataset.on = on === "vf-zero" ? "1" : "0";
+  $("vf-zero-offload").dataset.on = on === "vf-zero-offload" ? "1" : "0";
   const gbOf = (mib) => mib != null ? `${fmt(mib / 1024, 1)} GB` : null;
   facts($("vf-facts"), [
     ["空闲显存", gbOf(v.vram_free_mib ?? eng.vram_free_mib)],
