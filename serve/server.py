@@ -3108,6 +3108,8 @@ class Service:
         self.tool_call_recovery = False                   # opt-in: tool calls in forms next to the template's
         self.images = None                                # serve/images.py's ImageGen when the config has "images"
         self.restore_after_load = None                    # a session file an image job saved before it unloaded
+        self.unload_session_memory = False                # opt-in: an unload keeps the conversation in RAM (this process)
+        self.session_memory = None                        # the session bytes an unload kept, until the next load restores
         self.stop_ids = set(tokenizer.encode(IM_END, parse_special=True) +
                             tokenizer.encode("<|endoftext|>", parse_special=True))
 
@@ -3494,6 +3496,8 @@ class Service:
         print("[strata] the engine is running again", flush=True)
         if self.restore_after_load:                      # an image job unloaded it: its conversation comes back
             images_api.restore_session(self)
+        if self.session_memory:                          # an unload kept it in RAM: it comes back, no re-prefill
+            self._session_from_memory()
         if self.vram_reserve is not None and hasattr(self.engine, "vram"):   # #533: the reserve asked for last
             try:
                 self.engine.vram(self.vram_reserve)
@@ -3585,6 +3589,55 @@ class Service:
                 return r
             time.sleep(0.25)
 
+    def _session_memory_dir(self) -> str:
+        """Where the transient session file lives: next to the engine log (the run config's drive), else cwd."""
+        log = getattr(self.engine, "log_path", None)
+        return os.path.dirname(log) if log else os.getcwd()
+
+    def _session_to_memory(self) -> bool:
+        """SAVE the conversation to a transient file and keep its bytes in this process (the engine stays alive
+        here); -> True when kept.  The file is unlinked right after the read: RAM is the only copy."""
+        import tempfile
+        path = None
+        try:
+            fd, path = tempfile.mkstemp(prefix="strata-session-", suffix=".bin", dir=self._session_memory_dir())
+            os.close(fd)
+            r = self.engine.session_file("save", path)
+            with open(path, "rb") as f:
+                self.session_memory = f.read()
+            print(f"[strata] unload: the conversation ({r.get('tokens')} tokens, "
+                  f"{len(self.session_memory) >> 20} MiB) is kept in RAM; the next load restores it", flush=True)
+            return True
+        except Exception as e:                       # noqa: BLE001 - an unload without the cache is still an unload
+            self.session_memory = None
+            print(f"[strata] unload: the conversation was not kept in RAM ({e}); "
+                  "the next request reads its prompt again", flush=True)
+            return False
+        finally:
+            if path:
+                with contextlib.suppress(OSError):
+                    os.unlink(path)
+
+    def _session_from_memory(self) -> None:
+        """After an engine start: write the kept bytes to a transient file, RESTORE, and free them (the engine's
+        own copy is the only one from now on)."""
+        import tempfile
+        data, self.session_memory = self.session_memory, None
+        path = None
+        try:
+            fd, path = tempfile.mkstemp(prefix="strata-session-", suffix=".bin", dir=self._session_memory_dir())
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+            r = self.engine.session_file("restore", path)
+            print(f"[strata] the conversation from before the unload is back ({r.get('tokens')} tokens)", flush=True)
+        except Exception as e:                       # noqa: BLE001 - the engine runs, without the old cache
+            print(f"[strata] the conversation from before the unload was not restored ({e}); the next request "
+                  "reads its prompt again", flush=True)
+        finally:
+            if path:
+                with contextlib.suppress(OSError):
+                    os.unlink(path)
+
     def unload(self, idle_for: float | None = None) -> str:
         """Stop the engine between requests: "unloaded", "not loaded", "busy" (a request is running or waiting, or
         with idle_for: one ran more recently than that) or "unsupported"."""
@@ -3600,6 +3653,8 @@ class Service:
                     return "busy"
             if idle_for is not None and time.time() - (self.last_request_at or self.started_at) < idle_for:
                 return "busy"
+            if self.unload_session_memory:              # the conversation survives the unload in this process's RAM
+                self._session_to_memory()
             self.engine.unload()
             if self.vision is not None and hasattr(self.vision, "unload"):
                 self.vision.unload()
@@ -5615,7 +5670,8 @@ def make_handler(svc: Service):
                 except EngineStuck as e:
                     self._json(503, {"error": {"type": "server_error", "message": str(e)}})
                     return
-                self._json(409 if r == "busy" else 200, {"status": r})
+                self._json(409 if r == "busy" else 200,
+                           {"status": r, **({"session_kept": svc.session_memory is not None} if r == "unloaded" else {})})
                 return
             if path == "/load":                              # load now, e.g. ahead of a request
                 try:
@@ -7025,6 +7081,10 @@ def main() -> int:
               + ("" if svc.api_key or "*" not in svc.cors_origins else
                  " - WARNING: any web page may use the model (no API key)"), flush=True)
     svc.idle_unload_s = a.idle_unload if a.idle_unload is not None else float(cfg.get("idle_unload_s") or 0)
+    svc.unload_session_memory = cfg.get("unload_session_memory") is True   # an unload keeps the conversation in RAM
+    if svc.unload_session_memory:
+        print("[strata] an unload keeps the conversation in the server's RAM; the next load restores it "
+              "(no re-prefill)", flush=True)
     svc.min_free_vram_mib = a.min_free_vram_mib if a.min_free_vram_mib is not None else \
         int(cfg.get("min_free_vram_mib") or 0)
     svc.before_load = a.before_load or cfg.get("before_load") or None

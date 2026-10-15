@@ -82,5 +82,7 @@
    "reasoning_effort": "medium",
    "reasoning_budget_tokens": 4096
   }
- ]
+ ],
+ "vram_elastic": true,
+ "unload_session_memory": true
 }

@@ -249,7 +249,7 @@ async function vfPost(path, body) {
     if (!r.ok) toast("error", "操作失败", (j.error && j.error.message) || `HTTP ${r.status}`, 6000);
     else if (j.status === "busy") toast("warn", "模型正忙", "等当前请求结束后再试。");
     else if (j.status === "not loaded") toast("info", "已记录", "模型未加载；这条预留会在下次加载时生效。");
-    else toast("success", path === "unload" ? "已卸载" : "显存已调整",
+    else toast("success", path === "unload" ? (j.session_kept ? "已卸载（对话已存内存）" : "已卸载") : "显存已调整",
                j.vram_free_mib != null ? `现在空闲 ${fmt(j.vram_free_mib / 1024, 1)} GB` : (j.note || ""));
   } catch (e) { toast("error", "无法连接服务", String(e)); }
   VF.busy = false;
