@@ -7,7 +7,7 @@
 
 三个新版配置均使用 `build-huihui-q4-load\strata.exe`，编译版本 0.1.40.3，CUDA 13.0.2，sm_89，AVX2 portable。引擎 SHA-256 与来源在同目录的 `BUILD.json`。
 
-保留原有 Windows 加载补丁：每批64个专家、映射范围预取、并行组装、与GPU缓存填充重叠。源码改动保存在 `local-upgrade\windows-startup-64.patch`，只涉及 `expert_source.hpp`、`expert_source.cpp`、`generate.cpp`。huihui重复分片架构元数据的兼容修复在新版官方代码中已具备，沿用官方实现。
+保留原有 Windows 加载补丁：每批64个专家、映射范围预取、并行组装、与GPU缓存填充重叠。源码改动现已保存在 git 分支 `推理翻译与本地调优_base_v0.1.40.3`（提交 `9a6b8735`）中；旧记录指向的 `local-upgrade\windows-startup-64.patch` 已损坏（`corrupt patch at line 66`），不要再用于恢复。改动只涉及 `expert_source.hpp`、`expert_source.cpp`、`generate.cpp`。huihui重复分片架构元数据的兼容修复在新版官方代码中已具备，沿用官方实现。
 
 三个配置的 `env.STRATA_STARTUP_BATCH` 均为 `1`。日志应出现 `Windows startup pipeline: 64 experts per batch`。这项优化影响启动时GPU专家缓存的填充，不等于所有启动步骤或SSD读盘速度。
 
@@ -43,4 +43,6 @@ K-quant MMQ 保持官方默认 OFF，没有混入额外的提示词计算实验�
 
 保持原来的 `0.0.0.0:8080` 和API鉴权；现有客户端仍用 `http://192.168.2.120:8080/v1`。三个模型共用8080，每次只启动一个。
 
-回退时关闭新版，运行 `D:\git\Strata-main` 中相应的原启动脚本即可。不要把新版源码直接覆盖进旧目录。未来更新此Git副本前，应先保留本地加载补丁，并在新版本上重新应用、编译。
+回退时关闭新版，运行 `D:\git\Strata-main` 中相应的原启动脚本即可。不要把新版源码直接覆盖进旧目录。
+
+未来更新此 Git 副本时，恢复自改走 git 分支，不要用 `.patch` 文件：先 `git fetch origin`，再把分支 `推理翻译与本地调优_base_v0.1.40.3` 变基或合并到新版本上，解冲突后**重新编译 C++ 侧**（`BUILD-HUIHUI-Q4-LOAD.cmd`）。完整流程与易漏项见 `local-upgrade\README.md`。
