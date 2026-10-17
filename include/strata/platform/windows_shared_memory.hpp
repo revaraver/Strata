@@ -63,6 +63,10 @@ inline std::mutex& mutex() { static std::mutex m; return m; }
 inline std::map<std::string, std::shared_ptr<Region>>& regions() {
     static std::map<std::string, std::shared_ptr<Region>> r; return r;
 }
+// After drop_weights(), weight sections are transient: a lazy post-load read maps the range,
+// serves the memcpy, and releases it with the caller's shared_ptr (DirectFile keeps its own).
+// No region-table cache, no MEMKEEP line, so neither side re-commits or re-locks.
+inline bool& weights_dropped() { static bool b = false; return b; }
 // The engine retains views until shutdown. The server consumes MEMKEEP before READY/SAVED and holds
 // its own handle/view/VirtualLock across engine restarts. No payload crosses stdout or Python's heap.
 inline std::shared_ptr<Region> region(const std::string& name, uint64_t bytes, const char* kind,
@@ -76,7 +80,10 @@ inline std::shared_ptr<Region> region(const std::string& name, uint64_t bytes, c
     }
     auto p = std::make_shared<Region>(name, bytes, create);
     r.emplace(name, p);
-    if (create) { std::printf("MEMKEEP %s %llu %s\n", kind, (unsigned long long) bytes, name.c_str()); std::fflush(stdout); }
+    // After drop_weights(), weight ranges re-read lazily stay engine-local (pointers must remain
+    // valid for tensor_data callers) but are no longer announced: the server must not re-lock them.
+    if (create && !(weights_dropped() && kind && std::strcmp(kind, "weights") == 0))
+        { std::printf("MEMKEEP %s %llu %s\n", kind, (unsigned long long) bytes, name.c_str()); std::fflush(stdout); }
     return p;
 }
 inline void forget(const std::string& prefix) {
@@ -91,7 +98,10 @@ constexpr uint64_t header_bytes = 4096;
 
 // Cache only the requested source range. Experts use the arena directly, never a second GGUF cache.
 // Cold reads use one 8 MiB aligned staging block and bypass the Windows file cache.
-inline const uint8_t* file_range(const std::string& path, uint64_t offset, uint64_t n) {
+// `out` receives the owning shared_ptr so a long-lived consumer (DirectFile) keeps the view mapped
+// even after the region table forgets the name (drop_weights at READY).
+inline const uint8_t* file_range_ref(const std::string& path, uint64_t offset, uint64_t n,
+                                     std::shared_ptr<Region>* out) {
     const std::string ns = space();
     if (ns.empty() || n == 0) return nullptr;
     auto wp = wide(path);
@@ -113,7 +123,7 @@ inline const uint8_t* file_range(const std::string& path, uint64_t offset, uint6
     auto* h = (Header*) r->data;
     if (!r->fresh && (h->magic != magic || h->bytes != n || h->identity != id))
         throw std::runtime_error("incompatible resident weight range");
-    if (h->ready == 1) return r->data + header_bytes;
+    if (h->ready == 1) { if (out) *out = r; return r->data + header_bytes; }
     *h = Header{magic, n, id, 0};
     constexpr uint64_t chunk = 8ull << 20, align = 4096;
     auto* buf = (uint8_t*) _aligned_malloc((size_t) chunk, (size_t) align);
@@ -133,7 +143,21 @@ inline const uint8_t* file_range(const std::string& path, uint64_t offset, uint6
         done += c; at += got;
     }
     MemoryBarrier(); h->ready = 1;
+    if (out) *out = r;
     return r->data + header_bytes;
+}
+inline const uint8_t* file_range(const std::string& path, uint64_t offset, uint64_t n) {
+    return file_range_ref(path, offset, n, nullptr);
+}
+// Once the engine has finished loading, the device holds the model and the weight sections are only
+// redundant RAM: a pagefile-backed section charges full commit while any handle is open. Forget our
+// own views and ask the server to release its locked copies (MEMDROP). Opt out with STRATA_MEMKEEP_KEEP=1.
+inline void drop_weights() {
+    const std::string ns = space();
+    if (ns.empty()) return;
+    weights_dropped() = true;
+    forget(ns + "-w");
+    std::printf("MEMDROP %s-w\n", ns.c_str()); std::fflush(stdout);
 }
 } // namespace strata::platform::winmem
 #endif

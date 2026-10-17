@@ -83,6 +83,9 @@ struct DirectFile::Impl {
     HANDLE file = INVALID_HANDLE_VALUE;
     HANDLE port = nullptr;
     const uint8_t* memory = nullptr;
+    // Owns the view: the region table may forget the name (drop_weights at READY) while this file
+    // stays open; the shared_ptr keeps the mapping alive until close().
+    std::shared_ptr<strata::platform::winmem::Region> memory_ref;
     uint64_t memory_offset = 0, memory_bytes = 0;
     uint64_t size = 0;
     std::mutex mu;                      // everything below
@@ -206,7 +209,7 @@ bool DirectFile::open(const std::string& path, std::string& err) {
 bool DirectFile::retain_range(const std::string& path, uint64_t offset, uint64_t bytes, std::string& err) {
     if (strata::platform::winmem::space().empty()) return true;
     try {
-        impl_->memory = strata::platform::winmem::file_range(path, offset, bytes);
+        impl_->memory = strata::platform::winmem::file_range_ref(path, offset, bytes, &impl_->memory_ref);
         impl_->memory_offset = offset; impl_->memory_bytes = bytes;
         return true;
     } catch (const std::exception& e) { err = e.what(); return false; }
@@ -214,7 +217,7 @@ bool DirectFile::retain_range(const std::string& path, uint64_t offset, uint64_t
 
 void DirectFile::close() {
     impl_->stop_pool();
-    impl_->memory = nullptr; impl_->memory_bytes = 0;
+    impl_->memory = nullptr; impl_->memory_ref.reset(); impl_->memory_bytes = 0;
     if (impl_->port != nullptr) CloseHandle(impl_->port);
     if (impl_->file != INVALID_HANDLE_VALUE) CloseHandle(impl_->file);
     impl_->port = nullptr;

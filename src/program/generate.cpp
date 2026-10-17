@@ -9683,6 +9683,10 @@ int main(int argc, char** argv) {
                     }
                 }).detach();
         }
+        // The model now lives on the device; the pagefile-backed weight sections are redundant RAM
+        // (full commit charge + locked pages while any handle is open). Release both sides' views so
+        // nothing occupies virtual memory during the loaded period. Opt out: STRATA_MEMKEEP_KEEP=1.
+        if (!std::getenv("STRATA_MEMKEEP_KEEP")) strata::platform::winmem::drop_weights();
         std::printf("READY %lld stop\n", (long long) o.max_context);   // "stop": this engine honours STOP
         std::fflush(stdout);
         std::string line;
