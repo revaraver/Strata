@@ -777,7 +777,11 @@ class StrataEngine:
             at = args.index("--shared-expert-arena") + 1
             if args[at].startswith("mem:"):
                 if args[at] == "mem:auto":
-                    args[at] = "mem:Local\\Strata-" + uuid.uuid4().hex + "-arena"
+                    # Reuse the server's keeper namespace across engine restarts. A new name here
+                    # leaves the old 50-GiB keeper mapping alive and creates another arena.
+                    args[at] = ("mem:" + self.memory_keeper.namespace + "-arena"
+                                if "memory_keeper" in self.__dict__ else
+                                "mem:Local\\Strata-" + uuid.uuid4().hex + "-arena")
                 namespace = args[at][4:].removesuffix("-arena")
                 env = dict(env if env is not None else os.environ)
                 env["STRATA_MEMORY_NAMESPACE"] = namespace
@@ -3884,7 +3888,8 @@ class Service:
         if getattr(self, "telemetry", None) is None:
             from serve.telemetry import Telemetry
             self.telemetry = Telemetry(extra=lambda: {"tok_s": self._tok_s(), "tok_s_mean": self._tok_s_mean(),
-                                                    "prefill_tok_s_mean": self._prefill_tok_s_mean()},
+                                                    "prefill_tok_s_mean": self._prefill_tok_s_mean(),
+                                                    "gpu_strata_used": self._strata_used_mib()},
                                        gpu_index=int(getattr(self, "gpu_index", 0) or 0),
                                        gpu_indices=getattr(self, "gpu_indices", None),
                                        amd=getattr(self, "backend", None) == "hip")
@@ -3892,6 +3897,25 @@ class Service:
                 # #1317: the quick frozen-engine check does not end an engine whose GPU is busy (a long prompt chunk on a
                 # slow card keeps the GPU at work while the host thread sleeps)
                 self.engine.gpu_busy = lambda: (self.telemetry.snapshot()["now"].get("gpu_util") or 0) >= 10
+
+    def _strata_used_mib(self):
+        """revar: VRAM the Strata processes (the engine and, when it runs, the image encoder) hold on the engine's
+        card - NVML per-process accounting, so other programs' usage is never counted in."""
+        try:
+            pids = set()
+            for p in (getattr(self, "engine", None) and getattr(self.engine, "proc", None),
+                      getattr(self, "vision", None) and getattr(self.vision, "proc", None)):
+                if p is not None and getattr(p, "pid", None):
+                    pids.add(int(p.pid))
+            if not pids:
+                return None
+            if getattr(self, "_strata_nvml", None) is None:
+                from serve.telemetry import _Nvml
+                self._strata_nvml = _Nvml(int(getattr(self, "gpu_index", 0) or 0))
+            nv = self._strata_nvml
+            return nv.proc_mem_mib(pids) if nv.ok() else None
+        except Exception:
+            return None
 
     def _tok_s(self):
         """tok/s over the last RATE_WINDOW_S seconds.  Returns 0.0 while nothing is generating.  With parallel requests:
@@ -5520,8 +5544,10 @@ def make_handler(svc: Service):
             request is HTTP/1.0 and fully read here, so no later bytes are expected - data is not a hang-up."""
             done = self.watch_done = threading.Event()
             sock = self.connection
+            watch_t0 = time.monotonic()
 
             def watch():
+                seen = 0
                 while not done.wait(0.5) and not cancel.is_set():
                     try:
                         readable, _, _ = select.select([sock], [], [], 0)
@@ -5531,6 +5557,11 @@ def make_handler(svc: Service):
                     except (OSError, ValueError):            # the socket was closed here: the request has ended
                         return
                     if gone:
+                        seen += 1
+                        if seen < 2:
+                            continue     # one EOF sighting can be a half-close race: confirm it before killing
+                        print(f"[strata] client watch: socket EOF seen twice, cancelling after "
+                              f"{time.monotonic() - watch_t0:.1f}s", flush=True)
                         self._note(outcome="disconnected")
                         cancel.set()
                         return
@@ -5671,6 +5702,13 @@ def make_handler(svc: Service):
             if path == "/settings":
                 if self._authorized():
                     self._json(200, {"shared": bool(svc.shared), "defaults": svc.shared})
+                return
+            if path == "/v1/vram_presets":                  # revar: the Monitor reads the web's fast/mid/zero presets
+                if self._authorized():
+                    try:
+                        self._json(200, json.loads((ROOT / "data" / "vram_presets.json").read_text(encoding="utf-8")))
+                    except Exception:
+                        self._json(200, {})
                 return
             if path == "/config":                            # #564: the Settings view's keys of the run config
                 if self._authorized():
@@ -5850,6 +5888,17 @@ def make_handler(svc: Service):
                             svc.fifo.release()
                         result = "loaded"
                     self._json(200, {"status": result, **svc.v1_status()})
+                    return
+                if path == "/v1/vram_presets":              # revar: the web page saves its fast/mid/zero presets for the Monitor
+                    if not self._own_page("the VRAM presets can be saved"):
+                        return
+                    p = {k: int(req[k]) for k in ("fast", "mid", "zero")
+                         if isinstance(req.get(k), int) and not isinstance(req.get(k), bool) and req[k] >= 0}
+                    if req.get("unit") == "occupy":         # the web's numbers are "what Strata keeps", not "what is left free"
+                        p["unit"] = "occupy"
+                    if p:
+                        (ROOT / "data" / "vram_presets.json").write_text(json.dumps(p), encoding="utf-8")
+                    self._json(200, {"status": "saved", **p})
                     return
                 if path == "/v1/vram":                       # #533: give VRAM back to other programs, or take it
                     if not self._own_page("the VRAM reserve can be changed"):

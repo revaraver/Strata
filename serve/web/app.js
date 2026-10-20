@@ -233,16 +233,30 @@ function renderConvCache(c) {
 }
 
 // ------------------------------------------------------------------ 显存模式浮窗（#533 的界面）
-const VF = {fast: store.get("vram_fast_mib", 4096), mid: store.get("vram_mid_mib", 32768), zero: store.get("vram_zero_mib", 45056), busy: false};
+// revar: the three presets are written as OCCUPY (显存占用: what Strata keeps), not reserve; the engine only
+// understands reserve, so every send converts with the card's live total (VF.total, refreshed from /metrics).
+const VF = {fast: store.get("vram_fast_occupy", 45044), mid: store.get("vram_mid_occupy", 24140),
+            zero: store.get("vram_zero_occupy", 16372), busy: false, total: null};
 $("vf-fast-mib").value = VF.fast;
 $("vf-mid-mib").value = VF.mid;
+// revar: presets live on the server too (data/vram_presets.json) so the desktop Monitor can read them
+function vfSync() { fetch("v1/vram_presets", {method: "POST", headers: headers(true),
+  body: JSON.stringify({fast: VF.fast, mid: VF.mid, zero: VF.zero, unit: "occupy"})}).catch(() => {}); }
+function vfShow() { $("vf-fast-mib").value = VF.fast; $("vf-mid-mib").value = VF.mid; $("vf-zero-mib").value = VF.zero; }
+fetch("v1/vram_presets", {headers: headers()}).then(r => r.ok ? r.json() : {}).then(j => {
+  if (j.unit !== "occupy") return;                        // an old reserve-based file (or none): keep the local values
+  if (typeof j.fast === "number") { VF.fast = j.fast; store.set("vram_fast_occupy", VF.fast); }
+  if (typeof j.mid === "number") { VF.mid = j.mid; store.set("vram_mid_occupy", VF.mid); }
+  if (typeof j.zero === "number") { VF.zero = j.zero; store.set("vram_zero_occupy", VF.zero); }
+  vfShow();
+}).catch(() => {});
 $("vf-fast-mib").onchange = () => { VF.fast = Math.max(0, parseInt($("vf-fast-mib").value || "0", 10));
-  $("vf-fast-mib").value = VF.fast; store.set("vram_fast_mib", VF.fast); };
+  $("vf-fast-mib").value = VF.fast; store.set("vram_fast_occupy", VF.fast); vfSync(); };
 $("vf-mid-mib").onchange = () => { VF.mid = Math.max(0, parseInt($("vf-mid-mib").value || "0", 10));
-  $("vf-mid-mib").value = VF.mid; store.set("vram_mid_mib", VF.mid); };
+  $("vf-mid-mib").value = VF.mid; store.set("vram_mid_occupy", VF.mid); vfSync(); };
 $("vf-zero-mib").value = VF.zero;
 $("vf-zero-mib").onchange = () => { VF.zero = Math.max(0, parseInt($("vf-zero-mib").value || "0", 10));
-  $("vf-zero-mib").value = VF.zero; store.set("vram_zero_mib", VF.zero); };
+  $("vf-zero-mib").value = VF.zero; store.set("vram_zero_occupy", VF.zero); vfSync(); };
 async function vfPost(path, body) {
   if (VF.busy) return;
   VF.busy = true; $("vram-float").querySelectorAll("button").forEach(b => b.disabled = true);
@@ -259,9 +273,11 @@ async function vfPost(path, body) {
   VF.busy = false;
   $("vram-float").querySelectorAll("button").forEach(b => b.disabled = false);
 }
-$("vf-fast").onclick = () => vfPost("v1/vram", {reserve_mib: VF.fast});
-$("vf-mid").onclick = () => vfPost("v1/vram", {reserve_mib: VF.mid});
-$("vf-zero").onclick = () => vfPost("v1/vram", {reserve_mib: VF.zero});
+// revar: 占用 → 引擎要的预留: 预留 = 整卡总量 − 占用 (总量来自 /metrics, 没拿到前按 48GB 卡估)
+function vfReserve(occupy) { return Math.max(0, (VF.total != null ? VF.total : 49152) - occupy); }
+$("vf-fast").onclick = () => vfPost("v1/vram", {reserve_mib: vfReserve(VF.fast)});
+$("vf-mid").onclick = () => vfPost("v1/vram", {reserve_mib: vfReserve(VF.mid)});
+$("vf-zero").onclick = () => vfPost("v1/vram", {reserve_mib: vfReserve(VF.zero)});
 $("vf-unload").onclick = () => vfPost("unload");
 $("vf-full").onclick = () => vfPost("unload?full=1");
 function renderVramCard(m) {
@@ -269,13 +285,14 @@ function renderVramCard(m) {
   $("vram-float").hidden = !show;
   if (!show) return;
   const live = m.live || {}, eng = m.engine || {}, v = eng.vram || {};
+  if (m.hardware?.gpu_mem_total != null) VF.total = Math.round(m.hardware.gpu_mem_total / 2 ** 20);   // revar: 整卡总量, 占用↔预留换算用
   const unloaded = live.state === "unloaded";
   const r = v.reserve_mib;
   let mode = "默认", on = "";
   if (unloaded) { mode = eng.parked ? "已卸载（下次对话恢复）" : "完全卸载"; on = eng.parked ? "vf-unload" : "vf-full"; }
-  else if (r != null && r === VF.fast) { mode = "高速"; on = "vf-fast"; }
-  else if (r != null && r === VF.mid) { mode = "中速"; on = "vf-mid"; }
-  else if (r != null && r === VF.zero) { mode = "零速"; on = "vf-zero"; }
+  else if (r != null && r === vfReserve(VF.fast)) { mode = "高速"; on = "vf-fast"; }
+  else if (r != null && r === vfReserve(VF.mid)) { mode = "中速"; on = "vf-mid"; }
+  else if (r != null && r === vfReserve(VF.zero)) { mode = "零速"; on = "vf-zero"; }
   else if (r != null) mode = `自定义 ${r} MiB`;
   $("vf-mode").textContent = mode;
   $("vf-fast").dataset.on = on === "vf-fast" ? "1" : "0";
@@ -289,6 +306,9 @@ function renderVramCard(m) {
       ? (m.hardware.gpu_mem_total - m.hardware.gpu_mem_used) / 2 ** 20 : v.vram_free_mib ?? eng.vram_free_mib)],
     ["专家缓存", v.expert_cache_mib != null ? `${gbOf(v.expert_cache_mib)} / ${gbOf(v.expert_cache_full_mib)}` : null],
     ["当前预留", r != null ? `${fmt(r)} MiB` : null],
+    // revar: 整卡占用 + Strata 自己进程的占用 (服务端按 PID 用 NVML 统计, 不含其他程序)
+    ["当前显存占用", m.hardware?.gpu_mem_used != null ? gbOf(m.hardware.gpu_mem_used / 2 ** 20) : null],
+    ["当前Strata占用", m.hardware?.gpu_strata_used != null ? gbOf(m.hardware.gpu_strata_used) : null],
     ["内存权重", eng.retained_ram ? `${fmt(eng.retained_ram.weights_bytes / 2 ** 30, 1)} GiB` : null],
     ["显存快照", eng.device_park?.host_bytes ? `${fmt(eng.device_park.host_bytes / 2 ** 30, 1)} GiB` : null],
     ["已存对话", eng.retained_ram?.session_bytes ? `${fmt(eng.retained_ram.session_bytes / 2 ** 20)} MiB` : null],
@@ -552,6 +572,16 @@ const CFG_ZH = [
     "label": "最低可用 RAM（MiB）",
     "group": "并行与对话缓存",
     "help": "保存／恢复缓存时要求的最低可用系统 RAM，单位 MiB；8192 = 8 GiB。",
+    "apply_mode": "restart",
+    "kind": "number",
+    "min": 0,
+    "step": 1
+  },
+  {
+    "key": "conversation_cache_min_tokens",
+    "label": "缓存停放的最短对话（token）",
+    "group": "并行与对话缓存",
+    "help": "至少这么长的对话才存入 RAM 缓存槽；短小的旁路请求（标题生成、压缩等）不再占用槽位，避免长对话被挤出。0 或留空 = 任何对话都存。",
     "apply_mode": "restart",
     "kind": "number",
     "min": 0,

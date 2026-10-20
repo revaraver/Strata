@@ -29,7 +29,9 @@
     "--conversation-cache-slots",
     "8",
     "--conversation-cache-min-free-mib",
-    "8192",
+    "2048",
+    "--conversation-cache-min-tokens",
+    "10000",
     "--batch-mtp",
     "--max-context",
     "262144",
@@ -59,12 +61,11 @@
   "host": "0.0.0.0",
   "api_key": "123",
   "env": {
-    "STRATA_STARTUP_BATCH": "1",
-    "STRATA_DEVICE_PARK": "1"
+    "STRATA_SPEC_COUPLED": "1"
   },
   "reasoning_budget_tokens": 8192,
   "parallel": 2,
-  "effort_position": "end",
+  "effort_position": "start",
   "fit_max_tokens": true,
   "model_profiles": [
     {

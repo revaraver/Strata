@@ -59,6 +59,40 @@ class _Nvml:
     def ok(self):
         return self.lib is not None and self.dev is not None
 
+    class Proc(ctypes.Structure):
+        _fields_ = [("pid", ctypes.c_uint), ("usedGpuMemory", ctypes.c_ulonglong),
+                    ("gpuInstanceId", ctypes.c_uint), ("computeInstanceId", ctypes.c_uint)]
+
+    def proc_mem_mib(self, pids):
+        """VRAM (MiB) held by the given PIDs on this card (NVML per-process accounting); None when unreadable.
+        Windows/WDDM reports every process's usedGpuMemory as the unknown sentinel (nvidia-smi shows N/A too) - then
+        fall back to an estimate: the card's used VRAM minus what the OTHER processes verifiably hold."""
+        f = getattr(self.lib, "nvmlDeviceGetComputeRunningProcesses_v3", None) \
+            or getattr(self.lib, "nvmlDeviceGetComputeRunningProcesses_v2", None)
+        if f is None or not pids:
+            return None
+        try:
+            n = ctypes.c_uint(0)
+            if f(self.dev, ctypes.byref(n), None) not in (0, 7):      # 7: INSUFFICIENT_SIZE, count filled in
+                return None
+            cnt = min(n.value, 256)
+            if cnt == 0:
+                return 0
+            arr = (self.Proc * cnt)()
+            n2 = ctypes.c_uint(cnt)
+            if f(self.dev, ctypes.byref(n2), arr) != 0:
+                return None
+            vals = [(p.pid, int(p.usedGpuMemory)) for p in arr[:n2.value] if 0 < p.usedGpuMemory < 2 ** 63]
+            mine = [v for pid, v in vals if pid in pids]
+            if mine:
+                return sum(v >> 20 for v in mine)
+            m = self.Mem()                                             # nobody has a real number: estimate
+            if self.lib.nvmlDeviceGetMemoryInfo(self.dev, ctypes.byref(m)) != 0:
+                return None
+            return max(0, (m.used >> 20) - sum(v >> 20 for pid, v in vals if pid not in pids))
+        except (AttributeError, OSError, ValueError):
+            return None
+
     def _uint(self, fn, *args):
         v = ctypes.c_uint()
         try:
