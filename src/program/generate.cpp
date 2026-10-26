@@ -11033,6 +11033,16 @@ int main(int argc, char** argv) {
                 }
             }
             const auto parked = conversations.best(ids, req_imgs, want_cvec);
+            // diagnosis for the silent case: parked states exist but none reaches this prompt - the conversation
+            // diverged past the best match (history rewritten) or the snapshot that covered it is gone.  Without
+            // this line the request just re-reads the prompt and the log cannot tell the two causes apart.
+            if (conversations.size() > 0 && (int64_t) ids.size() > 1024 &&
+                parked.tokens < (int64_t) ids.size() - 1024 && parked.tokens <= std::max(resume, slot_tokens))
+                std::fprintf(stderr, "strata serve: conversation cache: the %zu parked state(s) match only %lld of "
+                                     "%lld prompt tokens (live resume %lld): the prompt diverged past that point "
+                                     "(history rewritten) or the snapshot covering it is gone\n",
+                             conversations.size(), (long long) parked.tokens, (long long) ids.size(),
+                             (long long) resume);
             std::optional<strata::core::SavedConversation> incoming;
             if (parked.tokens > std::max(resume, slot_tokens)) incoming.emplace(conversations.take(parked.index));
             if (incoming) slot_source = -1;
