@@ -86,5 +86,8 @@
   ],
   "vram_elastic": true,
   "unload_session_memory": true,
-  "shared_expert_arena": "mem:auto"
+  "shared_expert_arena": "mem:auto",
+  "video": {
+    "native": true
+  }
 }

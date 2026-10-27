@@ -12488,8 +12488,9 @@ int main(int argc, char** argv) {
                 if (!geni) {
                     for (int64_t c = 0; c < cells; ++c) put(c, c, c, c);
                 } else {
-                    struct Img { int64_t n, nx, ny; size_t off; };
+                    struct Img { int64_t n, nx, ny; size_t off; size_t pos_off; };   // pos_off: into img_pos, (size_t)-1 for SVE1
                     std::vector<Img> imgs;
+                    std::vector<int32_t> img_pos;   // (t,h,w) per token, SVE2 (video) records only
                     img_rows.clear();
                     std::FILE* f = std::fopen(emb_path.c_str(), "rb");
                     if (!f) ve = "cannot open " + emb_path;
@@ -12497,8 +12498,10 @@ int main(int argc, char** argv) {
                         int32_t hdr[5];
                         const size_t got = std::fread(hdr, sizeof(int32_t), 5, f);
                         if (got == 0) break;
-                        if (got != 5 || hdr[0] != 0x31455653 || hdr[1] < 1 || hdr[2] < 1 || hdr[3] < 1 ||
-                            (int64_t) hdr[2] * hdr[3] != hdr[1] || hdr[4] != (int32_t) g.n_embd) {
+                        const bool sve2 = got == 5 && hdr[0] == 0x32455653;   // 'SVE2': a video, positions follow the floats
+                        if (sve2) { int32_t nframes; if (std::fread(&nframes, sizeof(int32_t), 1, f) != 1) { ve = "short SVE2 header"; break; } }
+                        if (got != 5 || (hdr[0] != 0x31455653 && !sve2) || hdr[1] < 1 || hdr[2] < 1 || hdr[3] < 1 ||
+                            (!sve2 && (int64_t) hdr[2] * hdr[3] != hdr[1]) || hdr[4] != (int32_t) g.n_embd) {
                             ve = "bad embeddings file (expected strata-vision records of width " +
                                  std::to_string((long long) g.n_embd) + ")";
                             break;
@@ -12506,7 +12509,15 @@ int main(int argc, char** argv) {
                         const size_t off = img_rows.size(), cnt = (size_t) hdr[1] * (size_t) hdr[4];
                         img_rows.resize(off + cnt);
                         if (std::fread(img_rows.data() + off, sizeof(float), cnt, f) != cnt) { ve = "short embeddings file"; break; }
-                        imgs.push_back({hdr[1], hdr[2], hdr[3], off});
+                        size_t pos_off = (size_t) -1;
+                        if (sve2) {
+                            pos_off = img_pos.size();
+                            img_pos.resize(pos_off + (size_t) hdr[1] * 3);
+                            if (std::fread(img_pos.data() + pos_off, sizeof(int32_t), (size_t) hdr[1] * 3, f) != (size_t) hdr[1] * 3) {
+                                ve = "short SVE2 positions"; break;
+                            }
+                        }
+                        imgs.push_back({hdr[1], hdr[2], hdr[3], off, pos_off});
                     }
                     if (f) std::fclose(f);
                     int64_t p = 0, i = 0;
@@ -12528,13 +12539,23 @@ int main(int argc, char** argv) {
                             if (i + j >= n || ids[(size_t) (i + j)] != kImagePad)
                                 ve = "image " + std::to_string(k) + " has " + std::to_string((long long) im.n) +
                                      " rows but fewer <|image_pad|> tokens";
+                        int64_t span = 0;
                         for (int64_t j = 0; j < im.n && ve.empty(); ++j) {
-                            const int64_t y = j / im.nx, x = j % im.nx;
-                            put(i + j, p, p + y, p + x);
+                            if (im.pos_off == (size_t) -1) {
+                                const int64_t y = j / im.nx, x = j % im.nx;
+                                put(i + j, p, p + y, p + x);
+                                span = std::max(span, std::max(im.nx, im.ny));
+                            } else {
+                                // SVE2: mtmd's own decoder positions - for a video these carry the time axis (t),
+                                // which is what makes the model aware of motion and of where each frame sits
+                                const int32_t* q = img_pos.data() + im.pos_off + (size_t) j * 3;
+                                put(i + j, p + q[0], p + q[1], p + q[2]);
+                                span = std::max(span, std::max((int64_t) q[0], std::max((int64_t) q[1], (int64_t) q[2])) + 1);
+                            }
                             row_ptr[(size_t) (i + j)] = img_rows.data() + im.off + (size_t) j * (size_t) g.n_embd;
                         }
                         i += im.n;
-                        p += std::max(im.nx, im.ny);
+                        p += span;
                     }
                     if (ve.empty() && k != imgs.size()) ve = "the embeddings file has more images than the prompt";
                     if (ve.empty() && n > 0 && ids[(size_t) (n - 1)] == kImagePad) ve = "the prompt cannot end in an image";

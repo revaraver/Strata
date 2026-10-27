@@ -37,7 +37,7 @@ import urllib.request
 from pathlib import Path
 
 DEFAULTS = {"fps": 2.0, "max_video_tokens": 32768, "max_frames": 64, "max_side": 1280,
-            "ffmpeg": "ffmpeg", "ffprobe": "ffprobe", "timeout_s": 180}
+            "ffmpeg": "ffmpeg", "ffprobe": "ffprobe", "timeout_s": 180, "native": False}
 
 _CACHE_ROOT = Path(tempfile.gettempdir())
 
@@ -121,7 +121,9 @@ def plan(duration: float, w: int, h: int, item: dict, cfg: dict) -> tuple[float,
     max_side = int(item.get("max_side") or cfg["max_side"])
     max_frames = int(item.get("max_frames") or cfg["max_frames"])
     per = tokens_per_frame(w, h, max_side)
-    by_budget = max(1, budget // per)
+    # native: adjacent frames fuse into one 3D patch (temporal_patch_size=2), so a frame costs half a
+    # frame - the budget buys twice as many
+    by_budget = max(2, 2 * (budget // per)) if cfg["native"] else max(1, budget // per)
     by_fps = max(1, int(fps * duration))
     n = min(by_budget, by_fps, max_frames)
     return (n / duration if duration > 0 else fps), n, max_side
@@ -173,6 +175,50 @@ def _stamp(t: float) -> str:
     return f"t={s // 60:02d}:{s % 60:02d}"
 
 
+def _stage(local: str, key: str) -> str:
+    """An ASCII path for the encoder: strata-vision opens the video with a narrow fopen, which cannot
+    read a Japanese path, so the file is hard-linked (same volume, instant) or copied (cross volume)
+    into the cache directory under an ASCII name.  The suffix does not matter - ffmpeg probes."""
+    dest = _cache_dir(key) / "input.mp4"
+    if dest.exists():
+        return str(dest)
+    try:
+        os.link(local, dest)
+    except OSError:
+        shutil.copyfile(local, dest)
+    return str(dest)
+
+
+def native_parts(src: str, item: dict, vcfg: dict | None, log=None) -> tuple[list, dict]:
+    """-> (parts, stats) for the engine-native path (the config's \"video\": {\"native\": true}): no serve-side
+    frame extraction.  One staged file, one image part with a \"video:\" source the encoder reads itself
+    (VID): frames fused pairwise into 3D patches (the encoder sees motion), mtmd's own (t,h,w) decoder
+    positions spliced by the engine's GENI as real Interleaved-MRoPE coordinates.  The per-frame t= text
+    of the frame path is gone on purpose: the time axis is now IN the position encoding; the header gives
+    the model the human-readable anchor."""
+    cfg = _cfg(vcfg)
+    local = str(_download(src, cfg)) if src.startswith(("http://", "https://")) else src
+    path = Path(local)
+    if not path.exists():
+        raise ValueError(f"the video file does not exist: {local}")
+    stat = path.stat()
+    dur, w, h = probe(local, cfg)
+    fps, n, max_side = plan(dur, w, h, item, cfg)
+    key = hashlib.sha1(f"{local}|{stat.st_mtime_ns}|{stat.st_size}|{fps:.6f}|{n}|{max_side}".encode()).hexdigest()[:16]
+    staged = _stage(local, key)
+    per = tokens_per_frame(w, h, max_side)
+    est = -(-n // 2) * per                       # merged pairs: ceil(n/2) chunks of `per` tokens
+    header = (f"[video: {dur:.0f} s, {n} frames at {fps:.2f} fps; the frames' time is carried by the "
+              f"position encoding, t=0 s at the first frame]")
+    parts = [{"type": "text", "text": header},
+             {"type": "image", "source": f"video:{staged}|{fps:.6f}|{n}"}]
+    stats = {"frames": n, "duration_s": round(dur, 1), "fps": round(fps, 3), "tokens_per_frame": per,
+             "video_tokens": est, "native": True}
+    if log:
+        log(f"[strata] video (native): {n} frames from {dur:.0f}s, ~{est} tokens (3D patches, mtmd positions)")
+    return parts, stats
+
+
 def _video_source(item: dict) -> str | None:
     v = item.get("video") or item.get("video_url")
     if isinstance(v, dict):
@@ -206,6 +252,7 @@ def expand_video_parts(messages: list, vcfg: dict | None, log=None) -> tuple[lis
     if not has_video:
         return messages, []
     _drop_stale_cache()
+    native = _cfg(vcfg)["native"]
     all_stats, out_messages = [], []
     for m in messages:
         content = m.get("content") if isinstance(m, dict) else None
@@ -218,6 +265,11 @@ def expand_video_parts(messages: list, vcfg: dict | None, log=None) -> tuple[lis
             src = _video_source(item) if isinstance(item, dict) else None
             if src is None:
                 parts.append(item)
+                continue
+            if native:
+                vp, stats = native_parts(src, item, vcfg, log)
+                parts.extend(vp)
+                all_stats.append(stats)
                 continue
             paths, stats = frames(src, item, vcfg, log)
             all_stats.append(stats)

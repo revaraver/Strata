@@ -51,7 +51,10 @@ void quiet_log(ggml_log_level level, const char* text, void*) {
         const std::string gfx = strata_gfx_in(text);
         if (!gfx.empty()) g_gfx.push_back(gfx);
     }
-    if (level >= GGML_LOG_LEVEL_WARN) std::fputs(text, stderr);
+    // STRATA_VID_DEBUG=1: everything, including mtmd's DEBUG lines - what a video's ffmpeg command really was,
+    // how many bytes a frame read got; the tool is otherwise silent by design
+    static const bool vid_debug = std::getenv("STRATA_VID_DEBUG") != nullptr;
+    if (vid_debug || level >= GGML_LOG_LEVEL_WARN) std::fputs(text, stderr);
 }
 
 // "ENC <image> <out>": paths may contain spaces, so the image path ends at the last " " before the output path;
@@ -64,6 +67,24 @@ bool parse_enc(const std::string& line, std::string& img, std::string& out) {
     img = rest.substr(0, sp);
     out = rest.substr(sp + 1);
     return !img.empty() && !out.empty();
+}
+
+// VID <fps> <max_frames> <video path> <output>: the two numbers come first; the video path may contain
+// spaces, so the output path is what follows the LAST space (the server always writes space-free cache paths).
+bool parse_vid(const std::string& line, std::string& fps, std::string& maxf, std::string& vid, std::string& out) {
+    if (line.rfind("VID ", 0) != 0) return false;
+    const size_t s1 = line.find(' ', 4);
+    if (s1 == std::string::npos || s1 + 1 >= line.size()) return false;
+    const size_t s2 = line.find(' ', s1 + 1);
+    if (s2 == std::string::npos || s2 + 1 >= line.size()) return false;
+    fps = line.substr(4, s1 - 4);
+    maxf = line.substr(s1 + 1, s2 - s1 - 1);
+    const std::string rest = line.substr(s2 + 1);
+    const size_t sp = rest.rfind(' ');
+    if (sp == std::string::npos || sp == 0 || sp + 1 >= rest.size()) return false;
+    vid = rest.substr(0, sp);
+    out = rest.substr(sp + 1);
+    return true;
 }
 
 }  // namespace
@@ -287,6 +308,106 @@ int main(int argc, char** argv) {
     while (std::getline(std::cin, line)) {
         while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) line.pop_back();
         if (line == "QUIT") break;
+        // ---- video: VID <fps> <max_frames> <video> <out> ----
+        // mtmd's own ffmpeg helper decodes the frames; every frame is marked mergeable so qwen3vl fuses
+        // adjacent pairs into one 3D patch (temporal_patch_size=2): the encoder sees MOTION, not N stills.
+        // The record is SVE2: {int32 'SVE2', n, nx, ny, n_embd, n_frames}, then n x n_embd float32 rows,
+        // then n x int32 (t,h,w) decoder positions from mtmd (relative, first token at 0).  The engine's
+        // GENI uses those positions directly, so the model gets real Interleaved-MRoPE time coordinates
+        // instead of the image path's t = p.
+        {
+            std::string fps_s, maxf_s, vidp, outv;
+            if (parse_vid(line, fps_s, maxf_s, vidp, outv)) {
+                const auto t0 = std::chrono::steady_clock::now();
+                std::string verr;
+                mtmd_helper_video_init_params vp = mtmd_helper_video_init_params_default();
+                vp.fps_target = (float) std::atof(fps_s.c_str());
+                vp.timestamp_interval_ms = 0;   // frames stay consecutive for the temporal merge; the server interleaves its own t= text
+                // ffmpeg/ffprobe must be findable: PATH first (mtmd's own search), and STRATA_FFMPEG_DIR names the
+                // folder explicitly - the server knows where ffmpeg lives even when it is not on this process's PATH
+                if (const char* ffdir = std::getenv("STRATA_FFMPEG_DIR"); ffdir != nullptr && *ffdir != '\0')
+                    vp.ffmpeg_bin_dir = ffdir;
+                mtmd_helper_video* vcx = mtmd_helper_video_init(ctx, vidp.c_str(), vp);
+                if (!vcx) verr = "cannot open the video " + vidp;
+                const int64_t max_frames = std::atoll(maxf_s.c_str());
+                std::vector<mtmd_bitmap*> vbms;
+                std::string vprompt;
+                const std::string vmarker = mtmd_default_marker();
+                while (vcx && (max_frames <= 0 || (int64_t) vbms.size() < max_frames)) {
+                    mtmd_bitmap* ob = nullptr; char* ot = nullptr;
+                    const int32_t r = mtmd_helper_video_read_next(vcx, &ob, &ot);
+                    if (ot) std::free(ot);           // a text item (stream start / timestamp): the header text carries the anchor
+                    if (r == -1) break;              // EOF: every frame is in
+                    if (r < 0) { if (ob) mtmd_bitmap_free(ob); verr = "the video could not be decoded"; break; }
+                    if (!ob) continue;               // r == 0 with only a text item: read on
+                    mtmd_bitmap_set_mergeable(ob, true);
+                    vbms.push_back(ob);
+                    vprompt += vmarker;
+                }
+                if (vcx) mtmd_helper_video_free(vcx);
+                if (verr.empty() && vbms.empty()) verr = "the video has no frames";
+                const int64_t vframes = (int64_t) vbms.size();
+                mtmd_input_chunks* vchunks = verr.empty() ? mtmd_input_chunks_init() : nullptr;
+                if (vchunks) {
+                    mtmd_input_text vtxt{vprompt.data(), vprompt.size(), false, true};
+                    if (mtmd_tokenize(ctx, vchunks, &vtxt, vbms.data(), vbms.size()) != 0)
+                        verr = "the video could not be preprocessed";
+                }
+                for (auto b : vbms) mtmd_bitmap_free(b);
+                vbms.clear();
+                std::vector<float> vrows;
+                std::vector<int32_t> vpos;
+                int64_t vnx = 0, vny = 0;
+                int32_t t_off = 0;   // mtmd answers each chunk with RELATIVE positions; the time axis must keep
+                                     // counting across chunks: pair k sits at t = k, or the model cannot order them
+                if (vchunks) {
+                    for (size_t c = 0; c < mtmd_input_chunks_size(vchunks) && verr.empty(); ++c) {
+                        const mtmd_input_chunk* ch = mtmd_input_chunks_get(vchunks, c);
+                        if (mtmd_input_chunk_get_type(ch) != MTMD_INPUT_CHUNK_TYPE_IMAGE)
+                            continue;   // mtmd's "Video:" text chunk: the server's header text replaces it
+                        if (mtmd_encode_chunk(ctx, ch) != 0) { verr = "the vision encoder failed"; break; }
+                        const mtmd_image_tokens* it = mtmd_input_chunk_get_tokens_image(ch);
+                        const size_t nt = mtmd_input_chunk_get_n_tokens(ch);
+                        const float* embd = mtmd_get_output_embd(ctx);
+                        int32_t chunk_max_t = 0;
+                        for (size_t j = 0; j < nt; ++j) {
+                            const float* row = embd + j * (size_t) n_embd;
+                            vrows.insert(vrows.end(), row, row + n_embd);
+                            const mtmd_decoder_pos p = mtmd_image_tokens_get_decoder_pos(it, 0, j);
+                            vpos.push_back(t_off + (int32_t) p.t);
+                            vpos.push_back((int32_t) p.y);   // h
+                            vpos.push_back((int32_t) p.x);   // w
+                            chunk_max_t = std::max(chunk_max_t, (int32_t) p.t);
+                        }
+                        t_off += chunk_max_t + 1;
+                        if (vnx == 0) {
+                            const mtmd_decoder_pos last = mtmd_image_tokens_get_decoder_pos(it, 0, nt - 1);
+                            vnx = (int64_t) last.x + 1; vny = (int64_t) last.y + 1;
+                        }
+                    }
+                    const int64_t vn = (int64_t) vrows.size() / n_embd;
+                    if (verr.empty() && vn > 0) {
+                        FILE* vf = std::fopen(outv.c_str(), "wb");
+                        if (!vf) verr = "cannot write " + outv;
+                        if (vf) {
+                            const int32_t vhdr[6] = {0x32455653, (int32_t) vn, (int32_t) vnx, (int32_t) vny, n_embd, (int32_t) vframes};
+                            const bool ok = std::fwrite(vhdr, sizeof vhdr, 1, vf) == 1 &&
+                                            std::fwrite(vrows.data(), sizeof(float) * (size_t) n_embd, (size_t) vn, vf) == (size_t) vn &&
+                                            std::fwrite(vpos.data(), sizeof(int32_t) * 3, (size_t) vn, vf) == (size_t) vn;
+                            std::fclose(vf);
+                            if (!ok) verr = "short write to " + outv;
+                        }
+                    }
+                    mtmd_input_chunks_free(vchunks);
+                }
+                const double vms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+                if (verr.empty()) std::printf("VOK %lld %lld %lld %lld %.0f\n", (long long) (vrows.size() / n_embd),
+                                              (long long) vframes, (long long) vnx, (long long) vny, vms);
+                else std::printf("ERR %s\n", verr.c_str());
+                std::fflush(stdout);
+                continue;
+            }
+        }
         std::string img, out;
         if (!parse_enc(line, img, out)) { std::printf("ERR expected: ENC <image> <output>\n"); std::fflush(stdout); continue; }
         const auto t0 = std::chrono::steady_clock::now();

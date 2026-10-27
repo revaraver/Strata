@@ -267,6 +267,8 @@ def engine_frozen(base: tuple[float, int], now: tuple[float, int]) -> bool:
 
 VISION_READY_S = _timeout_env("STRATA_VISION_READY_S", 300.0)
 VISION_ENCODE_S = _timeout_env("STRATA_VISION_ENCODE_S", 300.0)
+# a video is N frames through the same encoder: the read gets proportionally longer (VID answers once, at the end)
+VISION_VIDEO_S = _timeout_env("STRATA_VISION_VIDEO_S", 900.0)
 ENGINE_READY_S = _timeout_env("STRATA_ENGINE_READY_S", 900.0)
 
 
@@ -2336,6 +2338,16 @@ class Vision:
     def _start(self):
         args, log, env = self.spawn
         # cwd is the encoder's directory: the ENC lines name the files relative to it (#480: no space in the line)
+        # video (VID): mtmd's helper runs ffmpeg/ffprobe by name - point it at the copy the server found (serve/video.py
+        # _find), which is not necessarily on this process's PATH (a service started from a bat has a thin PATH)
+        if "STRATA_FFMPEG_DIR" not in (env if env is not None else os.environ):
+            try:
+                ff = video_api._find("ffmpeg")
+            except ValueError:
+                ff = None
+            if ff:
+                env = dict(env if env is not None else os.environ)
+                env["STRATA_FFMPEG_DIR"] = str(Path(ff).parent)
         self.proc = popen("the image encoder", args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                           stderr=log or subprocess.DEVNULL, text=True, encoding="utf-8", bufsize=1, env=env,
                           cwd=self.dir)
@@ -2494,7 +2506,10 @@ class Vision:
 
     def encode(self, source: str | bytes, keep=()) -> tuple[Path, int]:
         """-> (embeddings file, number of image tokens).  `source`: what load() reads, or the image's bytes.
-        `keep`: files the caller still needs (never evicted by this call)."""
+        `keep`: files the caller still needs (never evicted by this call).  A "video:<path>|<fps>|<max_frames>"
+        source goes to the encoder's VID command (native video: 3D patches + mtmd's t,h,w positions)."""
+        if isinstance(source, str) and source.startswith("video:"):
+            return self._encode_video(source[len("video:"):], keep)
         data = self.normalize(source if isinstance(source, bytes) else self.load(source))
         key = hashlib.sha256(data).hexdigest()[:32]
         with self.lock:
@@ -2515,6 +2530,44 @@ class Vision:
                 img.unlink(missing_ok=True)
             if not line.startswith("OK"):
                 raise ValueError("the image could not be read: " + (line[4:] if line.startswith("ERR") else
+                                                                     "the vision encoder stopped"))
+            self.cache[key] = (out, int(line.split()[1]))
+            held = {str(p) for p in keep} | {str(out)}
+            for old in list(self.cache):                               # oldest first, but never one still in use
+                if len(self.cache) <= 64:
+                    break
+                if str(self.cache[old][0]) not in held:
+                    self.cache.pop(old)[0].unlink(missing_ok=True)
+            return self.cache[key]
+
+    def _encode_video(self, spec: str, keep=()) -> tuple[Path, int]:
+        """VID <fps> <max_frames> <path> <out>: the encoder decodes the video with its own ffmpeg (mtmd's
+        helper), marks every frame mergeable so qwen3vl fuses adjacent pairs into one 3D patch (the encoder
+        sees motion), and writes an SVE2 record - embeddings plus mtmd's own per-token (t,h,w) decoder
+        positions, which the engine's GENI splices as real Interleaved-MRoPE coordinates.  The path is the
+        staged ASCII copy serve/video.py made (a narrow fopen cannot read a Japanese source path).
+        -> (embeddings file, number of image tokens)."""
+        path, _, rest = spec.partition("|")
+        fps, _, max_frames = rest.partition("|")
+        st = os.stat(path)
+        key = hashlib.sha256(f"v|{path}|{st.st_mtime_ns}|{st.st_size}|{fps}|{max_frames}".encode()).hexdigest()[:32]
+        with self.lock:
+            if key in self.cache:
+                self.cache[key] = self.cache.pop(key)                  # most recently used last
+                return self.cache[key]
+            out = self.dir / f"{key}.sve"
+            try:
+                self.proc.stdin.write(f"VID {fps} {max_frames} {path} {out.name}\n")
+                self.proc.stdin.flush()
+                try:
+                    line = self._readline(VISION_VIDEO_S, "the video could not be read").strip()
+                except RuntimeError as e:
+                    self.stopped = True
+                    raise ValueError(str(e)) from None
+            except OSError:
+                raise ValueError("the vision encoder stopped") from None
+            if not line.startswith("VOK"):
+                raise ValueError("the video could not be read: " + (line[4:] if line.startswith("ERR") else
                                                                      "the vision encoder stopped"))
             self.cache[key] = (out, int(line.split()[1]))
             held = {str(p) for p in keep} | {str(out)}
@@ -6746,6 +6799,38 @@ def api_key_of(value):
     return key.strip()
 
 
+def start_translation_monitor(cfg, api_key, serve_port):
+    """The translation widget's sidecar (tools/translation_monitor.py) as a thread of this process: no extra
+    window, no .bat auto-start dance, and it lives and dies with the deployment it watches.  The page
+    (tools/translation_monitor.html) polls it.  The config's "translation_monitor" section is optional:
+    {"port": 8097, "db": "...", "nmt_port": 8096}, or false to switch it off.  A port already taken (an old
+    standalone sidecar still running from before this was built in) is one log line, never a failed start."""
+    tm = cfg.get("translation_monitor", {})
+    if tm is False:
+        return
+    tm = dict(tm)
+    port = int(tm.get("port", 8097))
+    db = tm.get("db") or str(Path(__file__).resolve().parent.parent / "reasoning-translation.history.sqlite")
+    try:
+        import importlib.util
+        mod_path = Path(__file__).resolve().parent.parent / "tools" / "translation_monitor.py"
+        spec = importlib.util.spec_from_file_location("translation_monitor", mod_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        import types
+        mod.ARGS = types.SimpleNamespace(port=port, db=db, nmt_port=int(tm.get("nmt_port", 8096)),
+                                         serve=f"http://127.0.0.1:{serve_port}",
+                                         key=(api_key[0] if isinstance(api_key, list) else (api_key or "")))
+        httpd = mod.ThreadingHTTPServer(("127.0.0.1", port), mod.Handler)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        print(f"[strata] translation monitor: http://127.0.0.1:{port}/status.json (db: {db})", flush=True)
+    except OSError as e:
+        print(f"[strata] translation monitor: port {port} is busy ({e}), the page will use whatever answers there",
+              flush=True)
+    except Exception as e:
+        print(f"[strata] translation monitor did not start: {e}", flush=True)
+
+
 def key_matches(given: str, key) -> bool:
     """given: a header's value as http.server read it, each byte one character.  A key with characters outside ASCII
     arrives as UTF-8 from most clients and as Latin-1 from some; the right key passes in both forms (#725: the
@@ -7255,6 +7340,7 @@ def main() -> int:
     if not svc.api_key and "api_key" in cfg:             # #569: written, but empty: the server has none (a warning, not a stop)
         print("[strata] the api_key in the config is empty: this server has no API key (anyone who can reach it can "
               "use it); set one, or leave api_key out", file=sys.stderr, flush=True)
+    start_translation_monitor(cfg, svc.api_key, a.port)
     svc.cors_origins = origins_of(cfg.get("cors_origins"), "cors_origins", wildcard=True)
     svc.trusted_origins = origins_of(cfg.get("trusted_origins"), "trusted_origins", wildcard=False)
     try:
