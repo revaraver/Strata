@@ -69,6 +69,7 @@ from serve.structured import StructuredOutputError, prepare_format, validated_js
 from serve import responses as responses_api  # noqa: E402
 from serve.responses import ResponsesError, error_body as responses_error_body  # noqa: E402
 from serve import images as images_api  # noqa: E402
+from serve import video as video_api  # noqa: E402
 
 IM_END = "<|im_end|>"
 IMAGE_PAD = "<|image_pad|>"
@@ -4206,6 +4207,10 @@ class Service:
         # `cancel` (#1999): set when the client hangs up; the downloads, the wait for the turn and the encodes stop
         # between pictures and raise ClientGone
         fetched = self._note_unreadable_tool_images(messages, cancel)
+        # serve/video.py: a {"type":"video"} part becomes timestamped frames (text + image parts) before the
+        # template renders; everything downstream (images_of, the encoder, GENI splicing) already speaks frames.
+        messages, self.last_video_stats = video_api.expand_video_parts(
+            messages, getattr(self, "video_cfg", None), log=print)
         ids = self.encode_prompt(messages, tools, kwargs)
         if force and kwargs.get("enable_thinking", True) is False:
             ids = ids + self.tok.encode(force, parse_special=True)
@@ -7193,6 +7198,7 @@ def main() -> int:
                   sampling_defaults=sampling_defaults,
                   fit_max_tokens=a.fit_max_tokens or cfg.get("fit_max_tokens") is True)
     svc.reasoning_close_retry = cfg.get("reasoning_close_retry") is True    # #1053: opt-in, off by default
+    svc.video_cfg = cfg.get("video")                    # serve/video.py: {"fps","max_video_tokens",...}, all optional
     if cfg.get("images"):                               # image generation (serve/images.py), set up by setup --images
         icfg = {k: (os.path.abspath(os.path.join(cfg.get("cwd") or ".", v))
                     if k in ("exe", "diffusion_model", "vae", "llm", "out_dir") and isinstance(v, str)

@@ -128,6 +128,7 @@ def _text_of(content) -> str:
 
 
 IMAGE_PARTS = ("image_url", "input_image", "image")
+VIDEO_PARTS = ("video", "video_url")   # serve/video.py expands these into timestamped frames before the template
 
 # Thinking levels.  The model's template knows low, medium and xhigh (its default; "high" means xhigh), and
 # enable_thinking=false for none.  Clients spell these many ways; everything maps onto those four.
@@ -181,6 +182,17 @@ def budget_effort(tokens) -> dict:
 def _has_image(content) -> bool:
     return isinstance(content, list) and any(isinstance(p, dict) and p.get("type") in IMAGE_PARTS for p in content)
 
+def _has_video(content) -> bool:
+    return isinstance(content, list) and any(isinstance(p, dict) and p.get("type") in VIDEO_PARTS for p in content)
+
+def _video_source(part: dict) -> str:
+    """A video part's source as one string: a local path or an http(s) URL (QwenCloud-style
+    {"video": ...} or OpenAI-style {"video_url": {"url": ...}})."""
+    v = part.get("video") or part.get("video_url")
+    if isinstance(v, dict):
+        v = v.get("url")
+    return v if isinstance(v, str) else ""
+
 
 def _image_source(part: dict) -> str:
     """An image part's source as one string: a data: URL, an http(s) URL or a local file path.
@@ -201,7 +213,7 @@ def _image_source(part: dict) -> str:
 def _parts_of(content):
     """Message content for the template: a string when there is no image (unchanged behaviour), otherwise the
     template's list form - text items and image items, in order - whose image items carry their source."""
-    if not _has_image(content):
+    if not _has_image(content) and not _has_video(content):
         return _text_of(content)
     items = []
     for part in content:
@@ -209,6 +221,14 @@ def _parts_of(content):
             continue
         if part.get("type") in IMAGE_PARTS:
             items.append({"type": "image", "source": _image_source(part)})
+        elif part.get("type") in VIDEO_PARTS:
+            src = _video_source(part)
+            if src:
+                item = {"type": "video", "video": src}
+                for k in ("fps", "max_video_tokens", "max_side"):     # per-request planning overrides
+                    if part.get(k) is not None:
+                        item[k] = part[k]
+                items.append(item)
         elif part.get("type") in TEXT_PARTS and "text" in part:
             items.append({"type": "text", "text": part.get("text", "")})
     return items
@@ -556,7 +576,7 @@ def openai_to_messages(req: dict) -> tuple[list[dict], list[dict] | None, dict]:
         # an image is read in a user, tool or assistant message; the system prompt takes text only, as _text_of reads
         images = role in ("user", "tool", "assistant")
         content = _check_parts(m.get("content"), f"messages[{i}].content",
-                               TEXT_PARTS + IMAGE_PARTS if images else TEXT_PARTS)
+                               TEXT_PARTS + IMAGE_PARTS + VIDEO_PARTS if images else TEXT_PARTS)
         out = {"role": role, "content": _parts_of(content) if images else _text_of(content)}
         if m.get("reasoning_content"):
             out["reasoning_content"] = m["reasoning_content"]
@@ -629,7 +649,7 @@ def anthropic_to_messages(req: dict, think_unasked: bool = True) -> tuple[list[d
         if isinstance(content, str):
             messages.append({"role": m["role"], "content": content})
             continue
-        if m.get("role") == "user" and _has_image(content) and not any(
+        if m.get("role") == "user" and (_has_image(content) or _has_video(content)) and not any(
                 isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
             messages.append({"role": "user", "content": _parts_of(content)})
             continue
@@ -652,7 +672,7 @@ def anthropic_to_messages(req: dict, think_unasked: bool = True) -> tuple[list[d
                     block.get("content"), f"messages[{i}].content[{j}].content", TEXT_PARTS + IMAGE_PARTS))})
         if text or calls or reasoning or parts:
             # an image sent beside tool results stays in this turn instead of being dropped
-            out = {"role": m["role"], "content": _parts_of(parts) if _has_image(parts) else "".join(text)}
+            out = {"role": m["role"], "content": _parts_of(parts) if _has_image(parts) or _has_video(parts) else "".join(text)}
             if reasoning:
                 out["reasoning_content"] = "".join(reasoning)
             if calls:
