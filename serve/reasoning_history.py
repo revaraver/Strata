@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 import threading
+import time
 from pathlib import Path
 
 
@@ -28,6 +29,12 @@ class ReasoningHistory:
             self.conn = sqlite3.connect(self.path, timeout=5, check_same_thread=False)
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("CREATE TABLE IF NOT EXISTS originals (id INTEGER PRIMARY KEY, digest TEXT UNIQUE NOT NULL, original TEXT NOT NULL)")
+            # the monitor reads pairs back; older databases carry only the digest of the display text
+            for column in ("display TEXT", "t REAL"):
+                try:
+                    self.conn.execute(f"ALTER TABLE originals ADD COLUMN {column}")
+                except sqlite3.OperationalError:
+                    pass
         return self.conn
 
     def remember(self, original: str, display: str):
@@ -37,10 +44,22 @@ class ReasoningHistory:
             if self.closed:
                 return
             conn = self._connection()
-            conn.execute("INSERT OR REPLACE INTO originals (digest, original) VALUES (?, ?)",
-                         (self.key(display), original))
+            conn.execute("INSERT OR REPLACE INTO originals (digest, original, display, t) VALUES (?, ?, ?, ?)",
+                         (self.key(display), original, display, time.time()))
             conn.execute("DELETE FROM originals WHERE id NOT IN (SELECT id FROM originals ORDER BY id DESC LIMIT 1000)")
             conn.commit()
+
+    def recent(self, n: int = 100):
+        """The last n translated segments, newest first: (id, t, original, display)."""
+        with self.lock:
+            if self.closed:
+                return []
+            try:
+                return self._connection().execute(
+                    "SELECT id, t, original, display FROM originals ORDER BY id DESC LIMIT ?", (max(1, min(n, 1000)),)
+                ).fetchall()
+            except sqlite3.Error:
+                return []
 
     def restore(self, text: str) -> str:
         if not isinstance(text, str) or not self.path.exists():

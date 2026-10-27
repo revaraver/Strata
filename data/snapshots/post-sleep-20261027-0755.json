@@ -1,0 +1,21 @@
+{
+ "taken": "2026-10-27 17:03 (实测; 初版手写 07:5x 是错的)",
+ "event": "睡眠 08:00→16:23 (8h+, Telegram 重连时刻为唤醒点); 未重启: 开机 10-26 20:14, 引擎 PID 34672 仍是 07:25:51 那个",
+ "wake_cost_observed": "S3 睡眠(RAM 带电零写盘, Kernel-Power 42@09:03/131@16:23, 无休眠事件); KV 全活着(128K 对话 128226 reused); 本会话 match only 14072 = hermes reaped runtime 后从存档重建 prompt; 第一句 11.4s = GPU 断电代价(CUDA re-init + 47GB 锁页重注册 + 35.5GB VRAM cache 重灌), 非磁盘回迁; strata commit 116.5→117 无泄漏; RAM free -32.6GB 归因系统侧(压缩存储 10.6GB 等), 非引擎",
+ "proc": {"pid": 34672, "working_set_gb": 37.3, "private_commit_gb": 116.5},
+ "ram_free_gb": 72.1,
+ "commit_free_gb": 63.2,
+ "vs_pre_sleep_0744": {
+   "ram_free_gb": {"before": 104.7, "after": 72.1, "delta": "-32.6 GB"},
+   "commit_free_gb": {"before": 106.0, "after": 63.2, "delta": "-42.8 GB"},
+   "gpu_used": {"before": "46559 MiB (高位)", "after": "45527 MiB", "note": "GPU 基本没变"}
+ },
+ "decode_after_wake": [
+   {"prompt": 128241, "tps": 142.0, "note": "decode 正常, 但 prompt 段 15 token 花了 11.4s = 唤醒后 KV/快照重载"},
+   {"prompt": 131111, "tps": 137.7},
+   {"prompt": 162260, "tps": 144.4, "note": "148188 token 全量重读 32.8s = 一条对话的 parked 快照唤醒后失效"}
+ ],
+ "parked": "parked=5",
+ "verdict_draft": "唤醒后 RAM commit +43GB 是真实现象; decode 尚未劣化 (142-144); 代价目前表现为一次性重载 (11.4s KV + 32.8s 重prefill). 待观察: 每个睡眠周期 commit 是否单调增长 (泄漏) 或稳定 (重新充电)",
+ "pair_files": ["lowvram-20261027-0745.json", "highvram-20261027-0745.json", "healthy-20261027-0741.json"]
+}

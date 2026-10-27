@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.55 var(--font-family, ui-sans-serif, system-ui); color: var(--foreground, #18181b); background: var(--background, #fafafa); }
+  .bar { display: flex; gap: 10px; align-items: center; padding: 10px; border-bottom: 1px solid var(--border, #e4e4e7); flex-wrap: wrap; position: sticky; top: 0; background: var(--background, #fafafa); z-index: 2; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .on { background: #22c55e; box-shadow: 0 0 8px #22c55e66; }
+  .off { background: #ef4444; box-shadow: 0 0 8px #ef444466; }
+  .stat { font-size: 12px; color: var(--muted-foreground, #71717a); }
+  .chip { border: 1px solid var(--border, #e4e4e7); border-radius: 999px; padding: 1px 10px; font-size: 12px; color: var(--muted-foreground, #71717a); }
+  input { background: var(--card, #ffffff); color: var(--foreground, #18181b); border: 1px solid var(--border, #e4e4e7); border-radius: 8px; padding: 4px 10px; font-size: 12px; width: 160px; outline: none; }
+  input:focus { border-color: var(--accent, #0d9488); }
+  button { background: var(--card, #ffffff); color: var(--muted-foreground, #71717a); border: 1px solid var(--border, #e4e4e7); border-radius: 8px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
+  button:hover { color: var(--foreground, #18181b); }
+  button.sel { border-color: var(--accent, #0d9488); color: var(--accent, #0d9488); }
+  #list { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .seg { background: var(--card, #ffffff); border: 1px solid var(--border, #e4e4e7); border-radius: 10px; padding: 9px 12px; transition: border-color .15s; }
+  .seg:hover { border-color: var(--accent, #0d9488); }
+  .seg .zh { white-space: pre-wrap; word-break: break-word; }
+  .meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .ts { color: var(--muted-foreground, #71717a); font-size: 11px; }
+  .toggle { cursor: pointer; font-size: 11px; color: var(--accent, #0d9488); user-select: none; }
+  .copy { margin-left: auto; font-size: 11px; padding: 1px 8px; }
+  .drawer { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .22s ease; }
+  .drawer.open { grid-template-rows: 1fr; }
+  .drawer > div { overflow: hidden; }
+  .en { margin-top: 7px; white-space: pre-wrap; word-break: break-word; color: var(--muted-foreground, #71717a); font-size: 12px; padding: 7px 10px; border-left: 2px solid var(--accent, #0d9488); background: var(--background, rgba(127,127,127,.06)); border-radius: 0 8px 8px 0; }
+  .stale { padding: 24px 12px; color: var(--muted-foreground, #71717a); text-align: left; }
+  .old .zh { color: var(--muted-foreground, #71717a); font-style: italic; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <span class="dot on" id="dot"></span>
+  <span class="stat" id="health">连接中…</span>
+  <span class="chip" id="rt">…</span>
+  <input id="q" type="search" placeholder="过滤段…">
+  <span class="stat" id="count"></span>
+  <span style="margin-left:auto"></span>
+  <button id="b10" class="sel">10</button>
+  <button id="b100">100</button>
+</div>
+<div id="list"><div class="stale">connecting…</div></div>
+<script>
+let n = 10, fail = 0, segs = [], open = new Set();
+const $ = id => document.getElementById(id);
+$('b10').onclick = () => { n = 10; $('b10').classList.add('sel'); $('b100').classList.remove('sel'); poll(); };
+$('b100').onclick = () => { n = 100; $('b100').classList.add('sel'); $('b10').classList.remove('sel'); poll(); };
+$('q').oninput = render;
+function esc(s){ const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function ago(t){ if (!t) return ''; const s = (Date.now()/1000) - t;
+  if (s < 60) return Math.max(1, s|0) + ' 秒前';
+  if (s < 3600) return (s/60|0) + ' 分钟前';
+  if (s < 86400) return (s/3600|0) + ' 小时前';
+  return new Date(t*1000).toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}); }
+window.copySeg = function(id, text, btn){ navigator.clipboard.writeText(text).then(() => { btn.textContent = '已复制 ✓';
+  setTimeout(() => { btn.textContent = '复制原文'; }, 1200); }); };
+window.toggleSeg = function(id, el){ if (open.has(id)) open.delete(id); else open.add(id);
+  el.closest('.seg').querySelector('.drawer').classList.toggle('open', open.has(id));
+  el.textContent = open.has(id) ? '收起原文 ▲' : '查看原文 ▼'; };
+function render(){
+  const q = $('q').value.trim().toLowerCase();
+  const shown = !q ? segs : segs.filter(s => (s.display||'').toLowerCase().includes(q) || (s.original||'').toLowerCase().includes(q));
+  $('count').textContent = q ? shown.length + '/' + segs.length + ' 段' : segs.length + ' 段';
+  if (!shown.length){ $('list').innerHTML = '<div class="stale">' + (segs.length ? '没有匹配的段' : '暂无翻译段（模型思考时会出现）') + '</div>'; return; }
+  $('list').innerHTML = shown.map(s => {
+    const isOpen = open.has(s.id);
+    return '<div class="seg' + (s.display ? '' : ' old') + '">' +
+      '<div class="zh">' + (s.display ? esc(s.display) : esc(s.original) + ' <span class="ts">（旧记录，无译文）</span>') + '</div>' +
+      '<div class="meta"><span class="ts">' + ago(s.t) + '</span>' +
+      '<span class="toggle" onclick="toggleSeg(' + s.id + ', this)">' + (isOpen ? '收起原文 ▲' : '查看原文 ▼') + '</span>' +
+      (s.display ? '<button class="copy" onclick="copySeg(' + s.id + ', this.closest(\'.seg\').querySelector(\'.en\').textContent, this)">复制原文</button>' : '') +
+      '</div>' +
+      '<div class="drawer' + (isOpen ? ' open' : '') + '"><div><div class="en">' + esc(s.original) + '</div></div></div>' +
+      '</div>';
+  }).join('');
+}
+async function poll(){
+  try {
+    const r = await fetch('http://127.0.0.1:8097/status.json?n=' + n, {cache:'no-store'});
+    const d = await r.json();
+    fail = 0;
+    $('dot').className = 'dot ' + (d.health && d.health.alive ? 'on' : 'off');
+    $('health').textContent = d.health ? (d.health.alive ? 't5 健康 · ' + d.health.ms + 'ms' : 't5 DOWN') : '';
+    const rt = d.rt || {};
+    $('rt').textContent = rt.ok ? ('翻译' + (rt.enabled ? '开' : '关') + ' · 进行中 ' + (rt.active||0) + ' · ' + (rt.busy ? '模型忙' : '模型闲')) : '/metrics 不可达';
+    segs = d.segments || [];
+    render();
+  } catch (e) {
+    if (++fail >= 3) { $('dot').className = 'dot off'; $('health').textContent = 'sidecar :8097 不可达'; }
+  }
+}
+poll(); setInterval(poll, 2000);
+</script>
+</body>
+</html>

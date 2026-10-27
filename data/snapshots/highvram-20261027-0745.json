@@ -1,0 +1,88 @@
+{
+ "taken": "2026-10-27 07:45:10",
+ "mode": "高位 (用户刚从低显存模式切回); 期望 cache 回涨到 ~19036 slots",
+ "gpu_used_free_mib": "46559, 2064",
+ "cache_lines_tail": [
+  "strata serve: VRAM 17140 MiB kept free: the expert cache 19036 -> 11062 of 19036 slots (21.00 of 36.27 GiB), 19020 MiB free now, prompt chunk 32768, in 131 ms",
+  "strata serve: VRAM 25000 MiB kept free: the expert cache 11062 -> 8174 of 19036 slots (15.50 of 36.27 GiB), 24636 MiB free now, prompt chunk 32768, in 40 ms",
+  "strata serve: VRAM 32768 MiB kept free: the expert cache 8174 -> 4192 of 19036 slots (8.00 of 36.27 GiB), 32316 MiB free now, prompt chunk 8192, in 56 ms",
+  "strata serve: VRAM 4096 MiB kept free: the expert cache 4192 -> 18639 of 19036 slots (35.50 of 36.27 GiB), 2204 MiB free now, prompt chunk 32768, in 1698 ms"
+ ],
+ "hit_rate_recent": [
+  79.2,
+  62.3,
+  77.7,
+  72.3,
+  75.1,
+  98.4,
+  99.4,
+  99.2
+ ],
+ "decode_last10_rounds": [
+  {
+   "prompt": 145670,
+   "tps": 86.9,
+   "acc": 65.0
+  },
+  {
+   "prompt": 148875,
+   "tps": 94.1,
+   "acc": 74.1
+  },
+  {
+   "prompt": 150669,
+   "tps": 104.4,
+   "acc": 78.1
+  },
+  {
+   "prompt": 152387,
+   "tps": 80.1,
+   "acc": 80.8
+  },
+  {
+   "prompt": 153888,
+   "tps": 88.4,
+   "acc": 76.8
+  },
+  {
+   "prompt": 155946,
+   "tps": 77.6,
+   "acc": 68.8
+  },
+  {
+   "prompt": 156180,
+   "tps": 91.8,
+   "acc": 79.2
+  },
+  {
+   "prompt": 156828,
+   "tps": 154.9,
+   "acc": 77.9
+  },
+  {
+   "prompt": 158857,
+   "tps": 149.8,
+   "acc": 75.5
+  },
+  {
+   "prompt": 159662,
+   "tps": 168.5,
+   "acc": 81.6
+  }
+ ],
+ "decode_bands_all_session": {
+  "0-60k": null,
+  "60-120k": {
+   "n": 13,
+   "tps_med": 147.8,
+   "acc": 83.3
+  },
+  "120-160k": {
+   "n": 29,
+   "tps_med": 113.7,
+   "acc": 70.0
+  },
+  "160k+": null
+ },
+ "pair_file": "lowvram-20261027-0745.json (低位基准, 130-150K 带 99.4 t/s, 命中率 62-79%)"
+}

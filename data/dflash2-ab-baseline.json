@@ -1,0 +1,15 @@
+{
+ "engine": "test exe, MTP (DFlash2 not yet on)",
+ "note": "重启前基线; 对照方法: 同 prompt 分带比 accept_pct 与 decode_med",
+ "all": {
+  "n": 29,
+  "accept_pct": 69.9,
+  "decode_med": 134.6
+ },
+ "band_180k_plus": {
+  "n": 29,
+  "accept_pct": 69.9,
+  "decode_med": 134.6
+ },
+ "band_70_120k": null
+}
