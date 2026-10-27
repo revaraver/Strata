@@ -225,7 +225,7 @@ def _parts_of(content):
             src = _video_source(part)
             if src:
                 item = {"type": "video", "video": src}
-                for k in ("fps", "max_video_tokens", "max_side"):     # per-request planning overrides
+                for k in ("fps", "max_video_tokens", "max_frames", "max_side"):     # per-request planning overrides
                     if part.get(k) is not None:
                         item[k] = part[k]
                 items.append(item)

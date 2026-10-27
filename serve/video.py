@@ -119,10 +119,11 @@ def plan(duration: float, w: int, h: int, item: dict, cfg: dict) -> tuple[float,
     fps = float(item.get("fps") or cfg["fps"])
     budget = int(item.get("max_video_tokens") or cfg["max_video_tokens"])
     max_side = int(item.get("max_side") or cfg["max_side"])
+    max_frames = int(item.get("max_frames") or cfg["max_frames"])
     per = tokens_per_frame(w, h, max_side)
     by_budget = max(1, budget // per)
     by_fps = max(1, int(fps * duration))
-    n = min(by_budget, by_fps, int(cfg["max_frames"]))
+    n = min(by_budget, by_fps, max_frames)
     return (n / duration if duration > 0 else fps), n, max_side
 
 
